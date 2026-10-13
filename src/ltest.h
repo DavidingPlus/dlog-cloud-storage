@@ -7,18 +7,18 @@
  *
  */
 
-#ifndef _XMAKE_PROJECT_LTEST_H_
-#define _XMAKE_PROJECT_LTEST_H_
+#ifndef _DLOG_CLOUD_STORAGE_LTEST_H_
+#define _DLOG_CLOUD_STORAGE_LTEST_H_
 
 #include "globalmacros.h"
 
 #include <string>
 
 
-XMAKE_PROJECT_NAMESPACE_BEGIN(xmake_project)
+DLOG_CLOUD_STORAGE_NAMESPACE_BEGIN(dlog_cloud_storage)
 
 
-class XMAKE_PROJECT_API_EXPORTED LTest
+class DLOG_CLOUD_STORAGE_API_EXPORTED LTest
 {
 
 public:
@@ -29,7 +29,7 @@ public:
 };
 
 
-XMAKE_PROJECT_NAMESPACE_END
+DLOG_CLOUD_STORAGE_NAMESPACE_END
 
 
 #endif

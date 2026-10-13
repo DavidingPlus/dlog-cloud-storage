@@ -1,8 +1,8 @@
 includes("config.lua")
 
 
-local project_name = "xmake-project"
-local macro_prefix = "XMAKE_PROJECT"
+local project_name = "dlog-cloud-storage"
+local macro_prefix = "DLOG_CLOUD_STORAGE"
 local version = "1.3.2"
 local export_headers_module = "export-headers"
 local export_headers_import_options = {rootdir = os.scriptdir(), anonymous = true}

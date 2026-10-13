@@ -5,7 +5,7 @@
 #include "ltest.h"
 
 
-using namespace xmake_project;
+using namespace dlog_cloud_storage;
 
 
 TEST(TestClassTest, Test1)
