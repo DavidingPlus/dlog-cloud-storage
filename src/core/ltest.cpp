@@ -10,9 +10,6 @@
 #include "ltest.h"
 
 
-DLOG_CLOUD_STORAGE_NAMESPACE_BEGIN(dlog_cloud_storage)
-
-
 std::pair<int, int> LTest::gee(int first, int second) const
 {
     std::pair<int, int> res;
@@ -23,6 +20,3 @@ std::pair<int, int> LTest::gee(int first, int second) const
 
     return res;
 }
-
-
-DLOG_CLOUD_STORAGE_NAMESPACE_END

@@ -5,9 +5,9 @@
 
 int main()
 {
-    std::cout << dlog_cloud_storage::LTest::foo() << std::endl;
+    std::cout << LTest::foo() << std::endl;
 
-    auto p = dlog_cloud_storage::LTest().gee(3, 4);
+    auto p = LTest().gee(3, 4);
 
     std::cout << p.first << std::endl;
     std::cout << p.second << std::endl;

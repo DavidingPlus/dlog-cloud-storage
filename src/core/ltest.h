@@ -15,10 +15,7 @@
 #include <string>
 
 
-DLOG_CLOUD_STORAGE_NAMESPACE_BEGIN(dlog_cloud_storage)
-
-
-class DLOG_CLOUD_STORAGE_API_EXPORTED LTest
+class LTest
 {
 
 public:
@@ -27,9 +24,6 @@ public:
 
     std::pair<int, int> gee(int first, int second) const;
 };
-
-
-DLOG_CLOUD_STORAGE_NAMESPACE_END
 
 
 #endif

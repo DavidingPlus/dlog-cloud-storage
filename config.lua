@@ -22,17 +22,6 @@ function define_current_platform_options()
     raise("Unknown platform")
 end
 
-function default_build_shared_for_current_platform()
-    if is_current_win32() then
-        return default_win32_build_shared()
-    end
-    if is_current_linux() then
-        return default_linux_build_shared()
-    end
-
-    raise("Unknown platform")
-end
-
 function apply_current_platform_target_config()
     if is_current_win32() then
         apply_win32_target_config()

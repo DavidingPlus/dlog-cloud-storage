@@ -6,13 +6,8 @@ function define_win32_options()
     option_end()
 end
 
-function default_win32_build_shared()
-    return true
-end
-
 function apply_win32_target_config()
-    -- /wd4251：导出包含 STL 成员的 C++ 类时，MSVC 会产生 C4251；当前项目采用类级 DLL 导出，该警告属于接口设计提示，暂时关闭，避免干扰正常构建输出。
-    add_cxflags("/utf-8", "/wd4251")
+    add_cxflags("/utf-8")
 
     -- 只在 debug 模式下添加调试信息。
     if is_mode("debug") then

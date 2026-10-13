@@ -3,12 +3,10 @@ includes("config.lua")
 
 local project_name = "dlog-cloud-storage"
 local macro_prefix = "DLOG_CLOUD_STORAGE"
-local version = "1.3.2"
-local export_headers_module = "export-headers"
-local export_headers_import_options = {rootdir = os.scriptdir(), anonymous = true}
+local version = "0.0.0"
 
--- 对外包依赖的唯一清单，每项填写 XMake 依赖规格字符串，例如 "fmt >=10.2.1"。common 对所有平台生效；windows 和 linux 分别只在对应目标平台生效。
--- 此表同时驱动 add_requires、target 的 add_packages 和发布 metadata；新增依赖只需在这里登记。
+-- 项目包依赖的唯一清单，每项填写 XMake 依赖规格字符串，例如 "fmt >=10.2.1"。common 对所有平台生效；windows 和 linux 分别只在对应目标平台生效。
+-- 此表同时驱动 add_requires 和 target 的 add_packages；新增依赖只需在这里登记。
 local package_dependencies = {
     common = {},
     windows = {},
@@ -20,7 +18,7 @@ set_version(version)
 
 set_xmakever("3.0.9")
 set_project(project_name)
-set_description("A C/C++ Project Template Powered By Xmake.")
+set_description("A Cloud Storage Application Powered By dlog.")
 set_languages("cxx17")
 
 add_rules("mode.debug", "mode.release")
@@ -30,7 +28,7 @@ set_configdir("$(builddir)/config/")
 add_configfiles("src/config.h.in", "src/globalmacros.h.in")
 
 
--- 依赖表是对外包依赖的唯一声明源。配置当前平台时只启用 common 和当前平台的依赖；metadata 会记录整张表。
+-- 配置当前平台时只启用 common 和当前平台的依赖。
 local active_package_dependencies = {}
 
 local function enable_package_dependencies(requirements)
@@ -69,20 +67,7 @@ option("install_in_place")
     set_description("Install to $(builddir)/$(plat)/$(arch)/$(mode)/install by default.")
 option_end()
 
-option("build_shared")
-    set_default(default_build_shared_for_current_platform())
-    set_showmenu(true)
-    set_description("Build the " .. project_name .. " library as a shared library.")
-option_end()
-
-
 define_current_platform_options()
-
-local build_shared = get_config("build_shared")
-
-if build_shared == nil then
-    build_shared = default_build_shared_for_current_platform()
-end
 
 local install_in_place = get_config("install_in_place")
 
@@ -96,8 +81,10 @@ if install_in_place then
 end
 
 
-target(project_name)
-    set_kind(build_shared and "shared" or "static")
+-- 内部静态库供主程序、单元测试和开发示例共用，不安装到应用发布目录。
+target(project_name .. "-static")
+    set_default(false)
+    set_kind("static")
 
     apply_current_platform_target_config()
 
@@ -105,78 +92,28 @@ target(project_name)
         add_packages(package_name_from_spec(requirement), {public = true})
     end
 
-    on_config(function (target)
-        local json = import("core.base.json")
-        local repository = os.getenv("GITHUB_REPOSITORY")
-        local release_version = os.getenv("GITHUB_REF_NAME")
-
-        local function dependency_specs(dependencies)
-            local specs = {}
-
-            for _, requirement in ipairs(dependencies) do
-                table.insert(specs, requirement)
-            end
-
-            table.sort(specs)
-            return json.mark_as_array(specs)
-        end
-
-        local manifest_path = path.join(os.projectdir(), "build", "package-metadata.json")
-        os.mkdir(path.directory(manifest_path))
-
-        io.writefile(manifest_path, json.encode({
-            repo = repository,
-            package_name = project_name,
-            macro_prefix = macro_prefix,
-            version = release_version,
-            dependencies = {
-                common = dependency_specs(package_dependencies.common),
-                windows = dependency_specs(package_dependencies.windows),
-                linux = dependency_specs(package_dependencies.linux)
-            }
-        }) .. "\n")
-    end)
-
-    if build_shared and is_current_win32() then
-        -- <前缀>_BUILD_SHARED：使用动态库还是静态库。
-        add_defines(macro_prefix .. "_BUILD_SHARED", {public = true})
-
-        -- <前缀>_DLL_EXPORT：是否正在编译 DLL 本身。如果是，使用 __declspec(dllexport) 导出符号，否则是用户在使用 DLL 库，使用 __declspec(dllimport) 导入符号。
-        add_defines(macro_prefix .. "_DLL_EXPORT")
-    end
-
     set_targetdir("$(builddir)/$(plat)/$(arch)/$(mode)/lib/")
 
-    -- 会将 src 根目录和所有子目录一起匹配。
-    add_files("src/**.cpp")
+    -- 会将 src 根目录和所有子目录一起匹配，排除主程序入口。
+    add_files("src/**.cpp|main.cpp")
 
+    -- public 只用于向项目内依赖此库的目标传递配置，不代表对外发布头文件。
     add_includedirs("$(builddir)/config/", {public = true})
     add_includedirs("src", os.dirs("src/**"), {public = true})
+target_end()
 
-    before_build(function (target)
-        io.writefile(path.join(path.directory(target:targetdir()), ".version"), version)
-    end)
 
-    before_install(function (target)
-        os.tryrm(target:installdir())
-        os.mkdir(target:installdir())
+target(project_name)
+    set_kind("binary")
 
-        os.cp("$(builddir)/$(plat)/$(arch)/$(mode)/.version", target:installdir())
+    apply_current_platform_target_config()
 
-        local export_headers = import(export_headers_module, export_headers_import_options)
-        export_headers.install_export_public_headers(target, target:installdir())
-    end)
+    add_deps(project_name .. "-static")
+    add_files("src/main.cpp")
+    set_targetdir("$(builddir)/$(plat)/$(arch)/$(mode)/bin/")
 
-    before_package(function (target)
-        os.tryrm(path.join(target:packagedir(), "$(plat)/$(arch)/$(mode)/"))
-        os.mkdir(target:packagedir())
-
-        os.cp("$(builddir)/$(plat)/$(arch)/$(mode)/.version", target:packagedir())
-        os.cp("$(builddir)/$(plat)/$(arch)/$(mode)/.version", path.join(target:packagedir(), "$(plat)/$(arch)/$(mode)/.version"))
-
-        local export_headers = import(export_headers_module, export_headers_import_options)
-        export_headers.package_export_public_headers(target)
-    end)
+    -- TODO 完善打包流程。
+    on_install(function () end)
 target_end()
 
 

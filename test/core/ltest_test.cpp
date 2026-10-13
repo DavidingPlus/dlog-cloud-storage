@@ -5,9 +5,6 @@
 #include "ltest.h"
 
 
-using namespace dlog_cloud_storage;
-
-
 TEST(TestClassTest, Test1)
 {
     EXPECT_EQ(LTest::foo(), std::string("hello world"));
