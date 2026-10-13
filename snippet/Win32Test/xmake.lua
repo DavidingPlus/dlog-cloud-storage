@@ -1,0 +1,5 @@
+target("Win32Test")
+    add_rules("win.sdk.application")
+    set_kind("binary")
+    add_files("main.cpp")
+target_end()
