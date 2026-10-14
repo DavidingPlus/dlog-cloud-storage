@@ -81,40 +81,42 @@ if install_in_place then
 end
 
 
--- 内部静态库供主程序、单元测试和开发示例共用，不安装到应用发布目录。
-target(project_name .. "-server-static")
-    set_default(false)
-    set_kind("static")
+-- 服务端及其内部静态库仅在 Linux 目标平台下构建。
+if is_plat("linux") then
+    -- 内部静态库供主程序、单元测试和开发示例共用，不安装到应用发布目录。
+    target(project_name .. "-server-static")
+        set_default(false)
+        set_kind("static")
 
-    apply_current_platform_target_config()
+        apply_current_platform_target_config()
 
-    for _, requirement in ipairs(active_package_dependencies) do
-        add_packages(package_name_from_spec(requirement), {public = true})
-    end
+        for _, requirement in ipairs(active_package_dependencies) do
+            add_packages(package_name_from_spec(requirement), {public = true})
+        end
 
-    set_targetdir("$(builddir)/$(plat)/$(arch)/$(mode)/lib/")
+        set_targetdir("$(builddir)/$(plat)/$(arch)/$(mode)/lib/")
 
-    -- 匹配服务端源码，排除主程序入口。
-    add_files("src/server/**.cpp|main.cpp")
+        -- 匹配服务端源码，排除主程序入口。
+        add_files("src/server/**.cpp|main.cpp")
 
-    -- public 只用于向项目内依赖此库的目标传递配置，不代表对外发布头文件。
-    add_includedirs("$(builddir)/config/", {public = true})
-    add_includedirs("src", os.dirs("src/**"), {public = true})
-target_end()
+        -- public 只用于向项目内依赖此库的目标传递配置，不代表对外发布头文件。
+        add_includedirs("$(builddir)/config/", {public = true})
+        add_includedirs("src", os.dirs("src/**"), {public = true})
+    target_end()
 
+    target(project_name .. "-server")
+        set_kind("binary")
 
-target(project_name .. "-server")
-    set_kind("binary")
+        apply_current_platform_target_config()
 
-    apply_current_platform_target_config()
+        add_deps(project_name .. "-server-static")
+        add_files("src/server/main.cpp")
+        set_targetdir("$(builddir)/$(plat)/$(arch)/$(mode)/bin/")
 
-    add_deps(project_name .. "-server-static")
-    add_files("src/server/main.cpp")
-    set_targetdir("$(builddir)/$(plat)/$(arch)/$(mode)/bin/")
-
-    -- TODO 完善打包流程。
-    on_install(function () end)
-target_end()
+        -- TODO 完善打包流程。
+        on_install(function () end)
+    target_end()
+end
 
 
 includes("snippet")

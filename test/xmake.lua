@@ -8,9 +8,12 @@ includes("config.lua")
 add_requires("gtest")
 
 local gtest_groups = {
-    "server",
     "testrun"
 }
+
+if is_plat("linux") then
+    table.insert(gtest_groups, "server")
+end
 
 -- 请用 xmake test 执行测试。
 target("tests")
@@ -18,7 +21,9 @@ target("tests")
 
     set_kind("binary")
     set_targetdir("$(builddir)/$(plat)/$(arch)/$(mode)/test")
-    add_deps("dlog-cloud-storage-server-static")
+    if is_plat("linux") then
+        add_deps("dlog-cloud-storage-server-static")
+    end
     add_packages("gtest")
 
     before_build(function ()
