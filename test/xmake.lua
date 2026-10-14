@@ -8,7 +8,7 @@ includes("config.lua")
 add_requires("gtest")
 
 local gtest_groups = {
-    "core",
+    "server",
     "testrun"
 }
 
@@ -18,7 +18,7 @@ target("tests")
 
     set_kind("binary")
     set_targetdir("$(builddir)/$(plat)/$(arch)/$(mode)/test")
-    add_deps("dlog-cloud-storage-static")
+    add_deps("dlog-cloud-storage-server-static")
     add_packages("gtest")
 
     before_build(function ()

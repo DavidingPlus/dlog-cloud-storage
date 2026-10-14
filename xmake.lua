@@ -82,7 +82,7 @@ end
 
 
 -- 内部静态库供主程序、单元测试和开发示例共用，不安装到应用发布目录。
-target(project_name .. "-static")
+target(project_name .. "-server-static")
     set_default(false)
     set_kind("static")
 
@@ -94,8 +94,8 @@ target(project_name .. "-static")
 
     set_targetdir("$(builddir)/$(plat)/$(arch)/$(mode)/lib/")
 
-    -- 会将 src 根目录和所有子目录一起匹配，排除主程序入口。
-    add_files("src/**.cpp|main.cpp")
+    -- 匹配服务端源码，排除主程序入口。
+    add_files("src/server/**.cpp|main.cpp")
 
     -- public 只用于向项目内依赖此库的目标传递配置，不代表对外发布头文件。
     add_includedirs("$(builddir)/config/", {public = true})
@@ -103,13 +103,13 @@ target(project_name .. "-static")
 target_end()
 
 
-target(project_name)
+target(project_name .. "-server")
     set_kind("binary")
 
     apply_current_platform_target_config()
 
-    add_deps(project_name .. "-static")
-    add_files("src/main.cpp")
+    add_deps(project_name .. "-server-static")
+    add_files("src/server/main.cpp")
     set_targetdir("$(builddir)/$(plat)/$(arch)/$(mode)/bin/")
 
     -- TODO 完善打包流程。

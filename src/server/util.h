@@ -1,0 +1,5 @@
+#ifndef _DLOG_CLOUD_STORAGE_SERVER_UTIL_H_
+#define _DLOG_CLOUD_STORAGE_SERVER_UTIL_H_
+
+
+#endif
