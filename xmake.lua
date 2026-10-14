@@ -10,8 +10,10 @@ local version = "0.0.0"
 local package_dependencies = {
     common = {},
     windows = {},
-    linux = {}
+    linux = {"bundle"}
 }
+
+add_repositories("davidingplus https://github.com/DavidingPlus/xmake-repo.git")
 
 
 set_version(version)
@@ -33,7 +35,9 @@ local active_package_dependencies = {}
 
 local function enable_package_dependencies(requirements)
     for _, requirement in ipairs(requirements) do
-        add_requires(requirement)
+        add_requires(requirement, {
+            configs = {shared = true, debug = is_mode("debug")}
+        })
         table.insert(active_package_dependencies, requirement)
     end
 end
