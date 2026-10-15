@@ -1,4 +1,5 @@
 includes("config.lua")
+includes("@builtin/xpack")
 
 
 local project_name = "dlog-cloud-storage"
@@ -117,9 +118,24 @@ if is_plat("linux") then
         add_files("src/server/main.cpp")
         set_targetdir("$(builddir)/$(plat)/$(arch)/$(mode)/bin/")
 
-        -- TODO 完善打包流程。
-        on_install(function () end)
+        -- 关闭为项目内动态库依赖自动添加的 RPATH，不影响下面的手动设置。当前内部库为静态库，此项不是必需；保留以显式控制自动添加行为。
+        set_policy("build.rpath", false)
+
+        -- 安装和打包时保留链接阶段的 RPATH，避免清理或改写它而依赖额外工具。
+        set_policy("install.rpath", false)
+
+        -- $ORIGIN 是可执行文件所在目录，bin 中的程序据此查找同级 lib 目录。runpath = false 明确使用 RPATH，使该路径也用于查找间接动态库依赖；省略此参数时，由链接器默认行为决定生成 RPATH 还是 RUNPATH。
+        add_rpathdirs("$ORIGIN/../lib", {runpath = false})
     target_end()
+
+    -- 只发布服务端程序及其运行依赖，内部静态库、测试和示例不单独打包。
+    xpack(project_name .. "-server")
+        set_formats("targz")
+        set_basename(project_name .. "-server-$(plat)-$(arch)-$(mode)-v$(version)")
+        set_title(project_name .. " Server")
+        set_description("A Cloud Storage Application Powered By dlog.")
+        add_targets(project_name .. "-server")
+    xpack_end()
 end
 
 
