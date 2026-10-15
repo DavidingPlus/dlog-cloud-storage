@@ -10,7 +10,7 @@ local version = "0.0.0"
 local package_dependencies = {
     common = {},
     windows = {},
-    linux = {"bundle"}
+    linux = {"bundle", "cpp-base64 2.rc.09"}
 }
 
 add_repositories("davidingplus https://github.com/DavidingPlus/xmake-repo.git")
