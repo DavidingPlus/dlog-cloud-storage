@@ -1,8 +1,9 @@
 #include "server/utils.h"
 
-#include <fstream>
 #include <limits>
 #include <stdexcept>
+#include <fstream>
+#include <sstream>
 
 #include <bundle.h>
 
@@ -79,7 +80,7 @@ std::string FileUtil::getPosLen(uintmax_t pos, size_t len) const
     // 文件流的位置和读取长度使用有符号类型，确认能容纳后再转换。
     if (pos > static_cast<uintmax_t>(std::numeric_limits<std::streamoff>::max()) || len > static_cast<uintmax_t>(std::numeric_limits<std::streamsize>::max())) throw std::length_error("FileUtil::getPosLen(): requested range exceeds stream limits");
 
-    // 文件输入流。中途抛出异常时，已打开的文件仍会在析构时自动关闭。
+    // ifstream 是文件输入流，open() 接收文件路径，之后从该文件读取内容。中途抛出异常时，已打开的文件仍会在析构时自动关闭。
     std::ifstream file;
 
     // failbit：操作失败，例如文件打开失败、定位失败，或者没有读满要求的字节数。
@@ -156,6 +157,29 @@ std::string FileUtil::UnCompress(std::string_view content)
 
 
     return unpacked;
+}
+
+std::string JsonUtil::Serialize(const Json::Value &value)
+{
+    Json::StreamWriterBuilder builder;
+    builder["emitUTF8"] = true;
+
+    return Json::writeString(builder, value);
+}
+
+Json::Value JsonUtil::UnSerialize(std::string_view content)
+{
+    Json::CharReaderBuilder builder;
+    // XXX C++ 风格的两种流的区别：istringstream 从内存字符串读取，构造参数是文本内容；ifstream 从文件读取，构造参数或 open() 的参数是文件路径。二者都继承 std::istream，提供 read()、operator>>() 等读取操作，并维护读取位置和流状态。
+    // parseFromStream() 接收 std::istream &，两种输入流都能传入，将 JSON 文本 content 包装成字符串流。
+    std::istringstream stream{std::string(content)};
+    Json::Value value;
+    std::string errors;
+
+    if (!Json::parseFromStream(builder, stream, &value, &errors)) throw std::invalid_argument("JsonUtil::UnSerialize(): " + errors);
+
+
+    return value;
 }
 
 
