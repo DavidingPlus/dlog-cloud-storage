@@ -29,46 +29,46 @@ TEST(CppBase64Tests, Encode)
     // Test all possibilites of fill bytes (none, one =, two ==)
     // References calculated with: https://www.base64encode.org/
 
-    std::string rest0_original = "abc";
-    std::string rest0_reference = "YWJj";
+    std::string rest0Original = "abc";
+    std::string rest0Reference = "YWJj";
 
-    std::string rest0_encoded = base64_encode(reinterpret_cast<const unsigned char *>(rest0_original.c_str()),
-                                              rest0_original.length());
-    std::string rest0_decoded = base64_decode(rest0_encoded);
+    std::string rest0Encoded = base64_encode(reinterpret_cast<const unsigned char *>(rest0Original.c_str()),
+                                             rest0Original.length());
+    std::string rest0Decoded = base64_decode(rest0Encoded);
 
-    ASSERT_EQ(rest0_decoded, rest0_original);
+    ASSERT_EQ(rest0Decoded, rest0Original);
 
-    std::cout << "encoded:   " << rest0_encoded << std::endl;
-    std::cout << "reference: " << rest0_reference << std::endl;
-    std::cout << "decoded:   " << rest0_decoded << std::endl
+    std::cout << "encoded:   " << rest0Encoded << std::endl;
+    std::cout << "reference: " << rest0Reference << std::endl;
+    std::cout << "decoded:   " << rest0Decoded << std::endl
               << std::endl;
 
-    std::string rest1_original = "abcd";
-    std::string rest1_reference = "YWJjZA==";
+    std::string rest1Original = "abcd";
+    std::string rest1Reference = "YWJjZA==";
 
-    std::string rest1_encoded = base64_encode(reinterpret_cast<const unsigned char *>(rest1_original.c_str()),
-                                              rest1_original.length());
-    std::string rest1_decoded = base64_decode(rest1_encoded);
+    std::string rest1Encoded = base64_encode(reinterpret_cast<const unsigned char *>(rest1Original.c_str()),
+                                             rest1Original.length());
+    std::string rest1Decoded = base64_decode(rest1Encoded);
 
-    ASSERT_EQ(rest1_decoded, rest1_original);
+    ASSERT_EQ(rest1Decoded, rest1Original);
 
-    std::cout << "encoded:   " << rest1_encoded << std::endl;
-    std::cout << "reference: " << rest1_reference << std::endl;
-    std::cout << "decoded:   " << rest1_decoded << std::endl
+    std::cout << "encoded:   " << rest1Encoded << std::endl;
+    std::cout << "reference: " << rest1Reference << std::endl;
+    std::cout << "decoded:   " << rest1Decoded << std::endl
               << std::endl;
 
-    std::string rest2_original = "abcde";
-    std::string rest2_reference = "YWJjZGU=";
+    std::string rest2Original = "abcde";
+    std::string rest2Reference = "YWJjZGU=";
 
-    std::string rest2_encoded = base64_encode(reinterpret_cast<const unsigned char *>(rest2_original.c_str()),
-                                              rest2_original.length());
-    std::string rest2_decoded = base64_decode(rest2_encoded);
+    std::string rest2Encoded = base64_encode(reinterpret_cast<const unsigned char *>(rest2Original.c_str()),
+                                             rest2Original.length());
+    std::string rest2Decoded = base64_decode(rest2Encoded);
 
-    ASSERT_EQ(rest2_decoded, rest2_original);
+    ASSERT_EQ(rest2Decoded, rest2Original);
 
-    std::cout << "encoded:   " << rest2_encoded << std::endl;
-    std::cout << "reference: " << rest2_reference << std::endl;
-    std::cout << "decoded:   " << rest2_decoded << std::endl
+    std::cout << "encoded:   " << rest2Encoded << std::endl;
+    std::cout << "reference: " << rest2Reference << std::endl;
+    std::cout << "decoded:   " << rest2Decoded << std::endl
               << std::endl;
 }
 
@@ -76,8 +76,8 @@ TEST(CppBase64Tests, MatchesRfc4648VectorsIncludingEmptyInputAndPadding)
 {
     const struct
     {
-        std::string plain;
-        std::string encoded;
+        std::string m_plain;
+        std::string m_encoded;
     } vectors[] = {
         {"", ""},
         {"f", "Zg=="},
@@ -89,11 +89,11 @@ TEST(CppBase64Tests, MatchesRfc4648VectorsIncludingEmptyInputAndPadding)
 
     for (const auto &vector : vectors)
     {
-        SCOPED_TRACE(vector.plain);
-        EXPECT_EQ(base64_encode(vector.plain), vector.encoded);
-        EXPECT_EQ(base64_decode(vector.encoded), vector.plain);
-        EXPECT_EQ(base64_encode(std::string_view(vector.plain)), vector.encoded);
-        EXPECT_EQ(base64_decode(std::string_view(vector.encoded)), vector.plain);
+        SCOPED_TRACE(vector.m_plain);
+        EXPECT_EQ(base64_encode(vector.m_plain), vector.m_encoded);
+        EXPECT_EQ(base64_decode(vector.m_encoded), vector.m_plain);
+        EXPECT_EQ(base64_encode(std::string_view(vector.m_plain)), vector.m_encoded);
+        EXPECT_EQ(base64_decode(std::string_view(vector.m_encoded)), vector.m_plain);
     }
 }
 
@@ -121,21 +121,21 @@ TEST(CppBase64Tests, StringViewApiRespectsSubstringBoundaries)
 {
     const std::string plain = "!foobar?";
     const std::string encoded = "!Zm9vYmFy?";
-    const std::string_view plain_view(plain.data() + 1, 6);
-    const std::string_view encoded_view(encoded.data() + 1, 8);
+    const std::string_view plainView(plain.data() + 1, 6);
+    const std::string_view encodedView(encoded.data() + 1, 8);
 
-    EXPECT_EQ(base64_encode(plain_view), "Zm9vYmFy");
-    EXPECT_EQ(base64_decode(encoded_view), "foobar");
-    EXPECT_EQ(base64_encode_pem(plain_view), "Zm9vYmFy");
-    EXPECT_EQ(base64_encode_mime(plain_view), "Zm9vYmFy");
+    EXPECT_EQ(base64_encode(plainView), "Zm9vYmFy");
+    EXPECT_EQ(base64_decode(encodedView), "foobar");
+    EXPECT_EQ(base64_encode_pem(plainView), "Zm9vYmFy");
+    EXPECT_EQ(base64_encode_mime(plainView), "Zm9vYmFy");
 }
 
 TEST(CppBase64Tests, UrlModeUsesAlternateAlphabetAndDotPadding)
 {
     const struct
     {
-        std::string plain;
-        std::string encoded;
+        std::string m_plain;
+        std::string m_encoded;
     } vectors[] = {
         {"", ""},
         {std::string("\xfb", 1), "-w.."},
@@ -145,14 +145,14 @@ TEST(CppBase64Tests, UrlModeUsesAlternateAlphabetAndDotPadding)
     // 此版本 URL 模式使用 '.' 补齐；它与省略补齐的 Base64URL 格式不同。
     for (const auto &vector : vectors)
     {
-        SCOPED_TRACE(vector.encoded);
-        EXPECT_EQ(base64_encode(vector.plain, true), vector.encoded);
-        EXPECT_EQ(base64_encode(std::string_view(vector.plain), true), vector.encoded);
-        EXPECT_EQ(base64_encode(reinterpret_cast<const unsigned char *>(vector.plain.data()),
-                                vector.plain.size(), true),
-                  vector.encoded);
-        EXPECT_EQ(base64_decode(vector.encoded), vector.plain);
-        EXPECT_EQ(base64_decode(std::string_view(vector.encoded)), vector.plain);
+        SCOPED_TRACE(vector.m_encoded);
+        EXPECT_EQ(base64_encode(vector.m_plain, true), vector.m_encoded);
+        EXPECT_EQ(base64_encode(std::string_view(vector.m_plain), true), vector.m_encoded);
+        EXPECT_EQ(base64_encode(reinterpret_cast<const unsigned char *>(vector.m_plain.data()),
+                                vector.m_plain.size(), true),
+                  vector.m_encoded);
+        EXPECT_EQ(base64_decode(vector.m_encoded), vector.m_plain);
+        EXPECT_EQ(base64_decode(std::string_view(vector.m_encoded)), vector.m_plain);
     }
 }
 
@@ -160,8 +160,8 @@ TEST(CppBase64Tests, AcceptsUnpaddedStandardAndUrlEncodedInput)
 {
     const struct
     {
-        std::string encoded;
-        std::string plain;
+        std::string m_encoded;
+        std::string m_plain;
     } vectors[] = {
         {"Zg", "f"},
         {"Zm8", "fo"},
@@ -171,36 +171,36 @@ TEST(CppBase64Tests, AcceptsUnpaddedStandardAndUrlEncodedInput)
 
     for (const auto &vector : vectors)
     {
-        SCOPED_TRACE(vector.encoded);
-        EXPECT_EQ(base64_decode(vector.encoded), vector.plain);
-        EXPECT_EQ(base64_decode(std::string_view(vector.encoded)), vector.plain);
+        SCOPED_TRACE(vector.m_encoded);
+        EXPECT_EQ(base64_decode(vector.m_encoded), vector.m_plain);
+        EXPECT_EQ(base64_decode(std::string_view(vector.m_encoded)), vector.m_plain);
     }
 }
 
 TEST(CppBase64Tests, PemWrapsAt64ColumnsWithoutTrailingNewline)
 {
     const std::string empty;
-    const std::string at_boundary(48, 'a');
-    const std::string over_boundary(49, 'a');
-    const std::string multiple_lines(97, 'a');
+    const std::string atBoundary(48, 'a');
+    const std::string overBoundary(49, 'a');
+    const std::string multipleLines(97, 'a');
     const std::string line = "YWFhYWFhYWFhYWFh"
                              "YWFhYWFhYWFhYWFh"
                              "YWFhYWFhYWFhYWFh"
                              "YWFhYWFhYWFhYWFh";
 
     EXPECT_TRUE(base64_encode_pem(empty).empty());
-    EXPECT_EQ(base64_encode_pem(at_boundary), line);
-    EXPECT_EQ(base64_encode_pem(over_boundary), line + "\nYQ==");
-    EXPECT_EQ(base64_encode_pem(std::string_view(multiple_lines)), line + "\n" + line + "\nYQ==");
-    EXPECT_EQ(base64_decode(base64_encode_pem(multiple_lines), true), multiple_lines);
+    EXPECT_EQ(base64_encode_pem(atBoundary), line);
+    EXPECT_EQ(base64_encode_pem(overBoundary), line + "\nYQ==");
+    EXPECT_EQ(base64_encode_pem(std::string_view(multipleLines)), line + "\n" + line + "\nYQ==");
+    EXPECT_EQ(base64_decode(base64_encode_pem(multipleLines), true), multipleLines);
 }
 
 TEST(CppBase64Tests, MimeWrapsAt76ColumnsWithoutTrailingNewline)
 {
     const std::string empty;
-    const std::string at_boundary(57, 'a');
-    const std::string over_boundary(58, 'a');
-    const std::string multiple_lines(115, 'a');
+    const std::string atBoundary(57, 'a');
+    const std::string overBoundary(58, 'a');
+    const std::string multipleLines(115, 'a');
     const std::string line = "YWFhYWFhYWFhYWFh"
                              "YWFhYWFhYWFhYWFh"
                              "YWFhYWFhYWFhYWFh"
@@ -208,10 +208,10 @@ TEST(CppBase64Tests, MimeWrapsAt76ColumnsWithoutTrailingNewline)
                              "YWFhYWFhYWFh";
 
     EXPECT_TRUE(base64_encode_mime(empty).empty());
-    EXPECT_EQ(base64_encode_mime(at_boundary), line);
-    EXPECT_EQ(base64_encode_mime(over_boundary), line + "\nYQ==");
-    EXPECT_EQ(base64_encode_mime(std::string_view(multiple_lines)), line + "\n" + line + "\nYQ==");
-    EXPECT_EQ(base64_decode(base64_encode_mime(multiple_lines), true), multiple_lines);
+    EXPECT_EQ(base64_encode_mime(atBoundary), line);
+    EXPECT_EQ(base64_encode_mime(overBoundary), line + "\nYQ==");
+    EXPECT_EQ(base64_encode_mime(std::string_view(multipleLines)), line + "\n" + line + "\nYQ==");
+    EXPECT_EQ(base64_decode(base64_encode_mime(multipleLines), true), multipleLines);
 }
 
 TEST(CppBase64Tests, RemovesLinefeedsWhenRequested)

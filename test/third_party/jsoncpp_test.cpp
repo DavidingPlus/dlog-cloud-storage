@@ -20,16 +20,16 @@ namespace
         JsonCppTests()
         {
             // 显式启用严格解析，并允许 JSON 标准中的标量根值。
-            Json::CharReaderBuilder::strictMode(&reader_builder_.settings_);
-            reader_builder_["strictRoot"] = false;
+            Json::CharReaderBuilder::strictMode(&m_readerBuilder.settings_);
+            m_readerBuilder["strictRoot"] = false;
         }
 
         bool parse(const std::string &document)
         {
-            root_ = Json::Value();
-            errors_.clear();
-            const std::unique_ptr<Json::CharReader> reader(reader_builder_.newCharReader());
-            return reader->parse(document.data(), document.data() + document.size(), &root_, &errors_);
+            m_root = Json::Value();
+            m_errors.clear();
+            const std::unique_ptr<Json::CharReader> reader(m_readerBuilder.newCharReader());
+            return reader->parse(document.data(), document.data() + document.size(), &m_root, &m_errors);
         }
 
         std::string write(const Json::Value &value, const std::string &indentation = "")
@@ -40,9 +40,9 @@ namespace
             return Json::writeString(builder, value);
         }
 
-        Json::CharReaderBuilder reader_builder_;
-        Json::Value root_;
-        std::string errors_;
+        Json::CharReaderBuilder m_readerBuilder;
+        Json::Value m_root;
+        std::string m_errors;
     };
 
 } // namespace
@@ -62,9 +62,9 @@ TEST_F(JsonCppTests, ConstructsNullAndScalarValues)
     ASSERT_EQ(integer.type(), Json::intValue);
     EXPECT_EQ(integer.asInt(), -42);
 
-    const Json::Value unsigned_integer(Json::UInt(42));
-    ASSERT_EQ(unsigned_integer.type(), Json::uintValue);
-    EXPECT_EQ(unsigned_integer.asUInt(), 42U);
+    const Json::Value unsignedInteger(Json::UInt(42));
+    ASSERT_EQ(unsignedInteger.type(), Json::uintValue);
+    EXPECT_EQ(unsignedInteger.asUInt(), 42U);
 
     const Json::Value real(1.25);
     ASSERT_EQ(real.type(), Json::realValue);
@@ -212,38 +212,38 @@ TEST_F(JsonCppTests, ParsesNestedStorageMetadataWithAllJsonTypes)
         "metadata": {"owner": "alice", "version": 2}
     })";
 
-    ASSERT_TRUE(parse(document)) << errors_;
-    EXPECT_TRUE(errors_.empty());
-    ASSERT_TRUE(root_.isObject());
-    EXPECT_EQ(root_["name"].asString(), "report.txt");
-    EXPECT_EQ(root_["size"].asUInt64(), 4096U);
-    EXPECT_FALSE(root_["compressed"].asBool());
-    EXPECT_DOUBLE_EQ(root_["ratio"].asDouble(), 0.75);
-    EXPECT_TRUE(root_["checksum"].isNull());
-    ASSERT_TRUE(root_["tags"].isArray());
-    ASSERT_EQ(root_["tags"].size(), 2U);
-    EXPECT_EQ(root_["tags"][1].asString(), "backup");
-    EXPECT_EQ(root_["metadata"]["owner"].asString(), "alice");
-    EXPECT_EQ(root_["metadata"]["version"].asInt(), 2);
+    ASSERT_TRUE(parse(document)) << m_errors;
+    EXPECT_TRUE(m_errors.empty());
+    ASSERT_TRUE(m_root.isObject());
+    EXPECT_EQ(m_root["name"].asString(), "report.txt");
+    EXPECT_EQ(m_root["size"].asUInt64(), 4096U);
+    EXPECT_FALSE(m_root["compressed"].asBool());
+    EXPECT_DOUBLE_EQ(m_root["ratio"].asDouble(), 0.75);
+    EXPECT_TRUE(m_root["checksum"].isNull());
+    ASSERT_TRUE(m_root["tags"].isArray());
+    ASSERT_EQ(m_root["tags"].size(), 2U);
+    EXPECT_EQ(m_root["tags"][1].asString(), "backup");
+    EXPECT_EQ(m_root["metadata"]["owner"].asString(), "alice");
+    EXPECT_EQ(m_root["metadata"]["version"].asInt(), 2);
 }
 
 TEST_F(JsonCppTests, ParsesEmptyContainersAndSurroundingWhitespace)
 {
-    ASSERT_TRUE(parse(" \t\r\n {} \n")) << errors_;
-    EXPECT_TRUE(root_.isObject());
-    EXPECT_TRUE(root_.empty());
+    ASSERT_TRUE(parse(" \t\r\n {} \n")) << m_errors;
+    EXPECT_TRUE(m_root.isObject());
+    EXPECT_TRUE(m_root.empty());
 
-    ASSERT_TRUE(parse("\n [] \r\n")) << errors_;
-    EXPECT_TRUE(root_.isArray());
-    EXPECT_TRUE(root_.empty());
+    ASSERT_TRUE(parse("\n [] \r\n")) << m_errors;
+    EXPECT_TRUE(m_root.isArray());
+    EXPECT_TRUE(m_root.empty());
 }
 
 TEST_F(JsonCppTests, ParsesScalarRootValues)
 {
     const struct
     {
-        std::string document;
-        Json::Value expected;
+        std::string m_document;
+        Json::Value m_expected;
     } cases[] = {
         {"null", Json::Value()},
         {"true", Json::Value(true)},
@@ -252,53 +252,53 @@ TEST_F(JsonCppTests, ParsesScalarRootValues)
         {"1.25", Json::Value(1.25)},
         {R"("text")", Json::Value("text")}};
 
-    for (const auto &test_case : cases)
+    for (const auto &testCase : cases)
     {
-        SCOPED_TRACE(test_case.document);
-        ASSERT_TRUE(parse(test_case.document)) << errors_;
-        EXPECT_EQ(root_, test_case.expected);
+        SCOPED_TRACE(testCase.m_document);
+        ASSERT_TRUE(parse(testCase.m_document)) << m_errors;
+        EXPECT_EQ(m_root, testCase.m_expected);
     }
 }
 
 TEST_F(JsonCppTests, ParsesExactSignedAndUnsigned64BitBoundaries)
 {
-    ASSERT_TRUE(parse("[-9223372036854775808,9223372036854775807,18446744073709551615]")) << errors_;
-    ASSERT_EQ(root_.size(), 3U);
-    ASSERT_TRUE(root_[0].isInt64());
-    EXPECT_EQ(root_[0].asInt64(), std::numeric_limits<Json::Int64>::min());
-    ASSERT_TRUE(root_[1].isInt64());
-    EXPECT_EQ(root_[1].asInt64(), std::numeric_limits<Json::Int64>::max());
-    ASSERT_TRUE(root_[2].isUInt64());
-    EXPECT_EQ(root_[2].asUInt64(), std::numeric_limits<Json::UInt64>::max());
-    EXPECT_FALSE(root_[2].isInt64());
+    ASSERT_TRUE(parse("[-9223372036854775808,9223372036854775807,18446744073709551615]")) << m_errors;
+    ASSERT_EQ(m_root.size(), 3U);
+    ASSERT_TRUE(m_root[0].isInt64());
+    EXPECT_EQ(m_root[0].asInt64(), std::numeric_limits<Json::Int64>::min());
+    ASSERT_TRUE(m_root[1].isInt64());
+    EXPECT_EQ(m_root[1].asInt64(), std::numeric_limits<Json::Int64>::max());
+    ASSERT_TRUE(m_root[2].isUInt64());
+    EXPECT_EQ(m_root[2].asUInt64(), std::numeric_limits<Json::UInt64>::max());
+    EXPECT_FALSE(m_root[2].isInt64());
 }
 
 TEST_F(JsonCppTests, ParsesFractionalAndExponentNumbers)
 {
-    ASSERT_TRUE(parse("[-1.25,6.022e23,1E-6,0.0]")) << errors_;
-    ASSERT_EQ(root_.size(), 4U);
-    EXPECT_DOUBLE_EQ(root_[0].asDouble(), -1.25);
-    EXPECT_DOUBLE_EQ(root_[1].asDouble(), 6.022e23);
-    EXPECT_DOUBLE_EQ(root_[2].asDouble(), 1e-6);
-    EXPECT_DOUBLE_EQ(root_[3].asDouble(), 0.0);
+    ASSERT_TRUE(parse("[-1.25,6.022e23,1E-6,0.0]")) << m_errors;
+    ASSERT_EQ(m_root.size(), 4U);
+    EXPECT_DOUBLE_EQ(m_root[0].asDouble(), -1.25);
+    EXPECT_DOUBLE_EQ(m_root[1].asDouble(), 6.022e23);
+    EXPECT_DOUBLE_EQ(m_root[2].asDouble(), 1e-6);
+    EXPECT_DOUBLE_EQ(m_root[3].asDouble(), 0.0);
 }
 
 TEST_F(JsonCppTests, ParsesUtf8MemberNamesAndValues)
 {
-    ASSERT_TRUE(parse(u8R"({"文件名":"云存储/报告📦.txt"})")) << errors_;
-    EXPECT_EQ(root_[u8"文件名"].asString(), u8"云存储/报告📦.txt");
+    ASSERT_TRUE(parse(u8R"({"文件名":"云存储/报告📦.txt"})")) << m_errors;
+    EXPECT_EQ(m_root[u8"文件名"].asString(), u8"云存储/报告📦.txt");
 }
 
 TEST_F(JsonCppTests, DecodesUnicodeEscapesAndSurrogatePairs)
 {
-    ASSERT_TRUE(parse(R"({"text":"\u4e91\u5b58\u50a8\ud83d\udce6"})")) << errors_;
-    EXPECT_EQ(root_["text"].asString(), u8"云存储📦");
+    ASSERT_TRUE(parse(R"({"text":"\u4e91\u5b58\u50a8\ud83d\udce6"})")) << m_errors;
+    EXPECT_EQ(m_root["text"].asString(), u8"云存储📦");
 }
 
 TEST_F(JsonCppTests, DecodesEscapedCharactersAndEmbeddedNuls)
 {
-    ASSERT_TRUE(parse(R"({"text":"\u0000\"\\\/\b\f\n\r\t"})")) << errors_;
-    EXPECT_EQ(root_["text"].asString(), std::string("\0\"\\/\b\f\n\r\t", 9));
+    ASSERT_TRUE(parse(R"({"text":"\u0000\"\\\/\b\f\n\r\t"})")) << m_errors;
+    EXPECT_EQ(m_root["text"].asString(), std::string("\0\"\\/\b\f\n\r\t", 9));
 }
 
 TEST_F(JsonCppTests, CharReaderRespectsExplicitDocumentBoundaries)
@@ -306,10 +306,10 @@ TEST_F(JsonCppTests, CharReaderRespectsExplicitDocumentBoundaries)
     const std::string buffer = "prefix{\"id\":7}suffix";
     const char *begin = buffer.data() + 6;
     const char *end = buffer.data() + buffer.size() - 6;
-    const std::unique_ptr<Json::CharReader> reader(reader_builder_.newCharReader());
+    const std::unique_ptr<Json::CharReader> reader(m_readerBuilder.newCharReader());
 
-    ASSERT_TRUE(reader->parse(begin, end, &root_, &errors_)) << errors_;
-    EXPECT_EQ(root_["id"].asInt(), 7);
+    ASSERT_TRUE(reader->parse(begin, end, &m_root, &m_errors)) << m_errors;
+    EXPECT_EQ(m_root["id"].asInt(), 7);
 }
 
 TEST_F(JsonCppTests, RejectsMalformedDocumentsWithDiagnostics)
@@ -324,7 +324,7 @@ TEST_F(JsonCppTests, RejectsMalformedDocumentsWithDiagnostics)
     {
         SCOPED_TRACE(document);
         EXPECT_FALSE(parse(document));
-        EXPECT_FALSE(errors_.empty());
+        EXPECT_FALSE(m_errors.empty());
     }
 }
 
@@ -338,7 +338,7 @@ TEST_F(JsonCppTests, StrictModeRejectsNonstandardExtensions)
     {
         SCOPED_TRACE(document);
         EXPECT_FALSE(parse(document));
-        EXPECT_FALSE(errors_.empty());
+        EXPECT_FALSE(m_errors.empty());
     }
 }
 
@@ -351,42 +351,42 @@ TEST_F(JsonCppTests, StrictModeRejectsDuplicateKeysAndTrailingContent)
     {
         SCOPED_TRACE(document);
         EXPECT_FALSE(parse(document));
-        EXPECT_FALSE(errors_.empty());
+        EXPECT_FALSE(m_errors.empty());
     }
 }
 
 TEST_F(JsonCppTests, ReaderCanBeReusedAfterParseFailure)
 {
-    const std::unique_ptr<Json::CharReader> reader(reader_builder_.newCharReader());
+    const std::unique_ptr<Json::CharReader> reader(m_readerBuilder.newCharReader());
     const std::string invalid = "{";
-    EXPECT_FALSE(reader->parse(invalid.data(), invalid.data() + invalid.size(), &root_, &errors_));
-    EXPECT_FALSE(errors_.empty());
+    EXPECT_FALSE(reader->parse(invalid.data(), invalid.data() + invalid.size(), &m_root, &m_errors));
+    EXPECT_FALSE(m_errors.empty());
 
     const std::string valid = R"({"ok":true})";
-    ASSERT_TRUE(reader->parse(valid.data(), valid.data() + valid.size(), &root_, &errors_)) << errors_;
-    EXPECT_TRUE(errors_.empty());
-    EXPECT_TRUE(root_["ok"].asBool());
+    ASSERT_TRUE(reader->parse(valid.data(), valid.data() + valid.size(), &m_root, &m_errors)) << m_errors;
+    EXPECT_TRUE(m_errors.empty());
+    EXPECT_TRUE(m_root["ok"].asBool());
 }
 
 TEST_F(JsonCppTests, DepthLimitReportsExcessiveNesting)
 {
-    reader_builder_["stackLimit"] = 8;
-    ASSERT_TRUE(parse("[[[0]]]")) << errors_;
+    m_readerBuilder["stackLimit"] = 8;
+    ASSERT_TRUE(parse("[[[0]]]")) << m_errors;
 
-    const std::string deeply_nested = std::string(32, '[') + "0" + std::string(32, ']');
-    EXPECT_THROW(parse(deeply_nested), Json::RuntimeError);
+    const std::string deeplyNested = std::string(32, '[') + "0" + std::string(32, ']');
+    EXPECT_THROW(parse(deeplyNested), Json::RuntimeError);
 }
 
 TEST_F(JsonCppTests, ParsesStreamsAndReportsInvalidStreamInput)
 {
     std::istringstream valid(R"({"files":["a.txt","b.txt"]})");
-    ASSERT_TRUE(Json::parseFromStream(reader_builder_, valid, &root_, &errors_)) << errors_;
-    ASSERT_EQ(root_["files"].size(), 2U);
-    EXPECT_EQ(root_["files"][0].asString(), "a.txt");
+    ASSERT_TRUE(Json::parseFromStream(m_readerBuilder, valid, &m_root, &m_errors)) << m_errors;
+    ASSERT_EQ(m_root["files"].size(), 2U);
+    EXPECT_EQ(m_root["files"][0].asString(), "a.txt");
 
     std::istringstream invalid(R"({"files":[})");
-    EXPECT_FALSE(Json::parseFromStream(reader_builder_, invalid, &root_, &errors_));
-    EXPECT_FALSE(errors_.empty());
+    EXPECT_FALSE(Json::parseFromStream(m_readerBuilder, invalid, &m_root, &m_errors));
+    EXPECT_FALSE(m_errors.empty());
 }
 
 TEST_F(JsonCppTests, WritesCompactJsonWithExpectedSyntax)
@@ -407,18 +407,18 @@ TEST_F(JsonCppTests, WritesCompactJsonWithExpectedSyntax)
 
 TEST_F(JsonCppTests, PrettyAndCompactWritersPreserveTheSameDocument)
 {
-    ASSERT_TRUE(parse(R"({"files":[{"name":"a.txt","size":10}],"ready":true})")) << errors_;
-    const Json::Value expected = root_;
+    ASSERT_TRUE(parse(R"({"files":[{"name":"a.txt","size":10}],"ready":true})")) << m_errors;
+    const Json::Value expected = m_root;
     const std::string compact = write(expected);
     const std::string pretty = write(expected, "  ");
 
     EXPECT_EQ(compact.find('\n'), std::string::npos);
     EXPECT_NE(pretty.find('\n'), std::string::npos);
     EXPECT_NE(pretty.find("  \"files\""), std::string::npos);
-    ASSERT_TRUE(parse(compact)) << errors_;
-    EXPECT_EQ(root_, expected);
-    ASSERT_TRUE(parse(pretty)) << errors_;
-    EXPECT_EQ(root_, expected);
+    ASSERT_TRUE(parse(compact)) << m_errors;
+    EXPECT_EQ(m_root, expected);
+    ASSERT_TRUE(parse(pretty)) << m_errors;
+    EXPECT_EQ(m_root, expected);
 }
 
 TEST_F(JsonCppTests, WriterEscapesControlCharactersAndPreservesBinaryStrings)
@@ -434,8 +434,8 @@ TEST_F(JsonCppTests, WriterEscapesControlCharactersAndPreservesBinaryStrings)
     EXPECT_NE(document.find("\\\""), std::string::npos);
     EXPECT_NE(document.find("\\\\"), std::string::npos);
     EXPECT_EQ(document.find('\0'), std::string::npos);
-    ASSERT_TRUE(parse(document)) << errors_;
-    EXPECT_EQ(root_, object);
+    ASSERT_TRUE(parse(document)) << m_errors;
+    EXPECT_EQ(m_root, object);
 }
 
 TEST_F(JsonCppTests, WriterCanEmitUtf8WithoutLosingUnicode)
@@ -449,8 +449,8 @@ TEST_F(JsonCppTests, WriterCanEmitUtf8WithoutLosingUnicode)
 
     EXPECT_NE(document.find(u8"文件名"), std::string::npos);
     EXPECT_NE(document.find(u8"报告📦.txt"), std::string::npos);
-    ASSERT_TRUE(parse(document)) << errors_;
-    EXPECT_EQ(root_, object);
+    ASSERT_TRUE(parse(document)) << m_errors;
+    EXPECT_EQ(m_root, object);
 }
 
 TEST_F(JsonCppTests, WriterPreserves64BitIntegersAndDoublePrecision)
@@ -463,10 +463,10 @@ TEST_F(JsonCppTests, WriterPreserves64BitIntegersAndDoublePrecision)
 
     EXPECT_NE(document.find("-9223372036854775808"), std::string::npos);
     EXPECT_NE(document.find("18446744073709551615"), std::string::npos);
-    ASSERT_TRUE(parse(document)) << errors_;
-    EXPECT_EQ(root_["minimum"].asInt64(), object["minimum"].asInt64());
-    EXPECT_EQ(root_["maximum"].asUInt64(), object["maximum"].asUInt64());
-    EXPECT_DOUBLE_EQ(root_["fraction"].asDouble(), object["fraction"].asDouble());
+    ASSERT_TRUE(parse(document)) << m_errors;
+    EXPECT_EQ(m_root["minimum"].asInt64(), object["minimum"].asInt64());
+    EXPECT_EQ(m_root["maximum"].asUInt64(), object["maximum"].asUInt64());
+    EXPECT_DOUBLE_EQ(m_root["fraction"].asDouble(), object["fraction"].asDouble());
 }
 
 TEST_F(JsonCppTests, StreamWriterProducesReadableJson)
@@ -479,9 +479,9 @@ TEST_F(JsonCppTests, StreamWriterProducesReadableJson)
     std::ostringstream stream;
 
     ASSERT_EQ(writer->write(object, &stream), 0);
-    ASSERT_TRUE(parse(stream.str())) << errors_;
-    EXPECT_EQ(root_["name"].asString(), "stream.txt");
-    EXPECT_EQ(root_["size"].asUInt64(), 8192U);
+    ASSERT_TRUE(parse(stream.str())) << m_errors;
+    EXPECT_EQ(m_root["name"].asString(), "stream.txt");
+    EXPECT_EQ(m_root["size"].asUInt64(), 8192U);
 }
 
 TEST_F(JsonCppTests, RoundTripsLargeStorageMetadataCollections)
@@ -498,7 +498,7 @@ TEST_F(JsonCppTests, RoundTripsLargeStorageMetadataCollections)
         metadata["files"].append(file);
     }
 
-    ASSERT_TRUE(parse(write(metadata))) << errors_;
-    ASSERT_EQ(root_["files"].size(), 1024U);
-    EXPECT_EQ(root_, metadata);
+    ASSERT_TRUE(parse(write(metadata))) << m_errors;
+    ASSERT_EQ(m_root["files"].size(), 1024U);
+    EXPECT_EQ(m_root, metadata);
 }
