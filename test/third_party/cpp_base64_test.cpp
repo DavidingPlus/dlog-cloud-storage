@@ -238,14 +238,14 @@ TEST(CppBase64Tests, RejectsCharactersOutsideBothAlphabets)
 
 TEST(CppBase64Tests, RoundTripsAllByteValuesAcrossBlockBoundaries)
 {
-    const std::size_t sizes[] = {0, 1, 2, 3, 4, 5, 47, 48, 49, 56, 57, 58, 255, 256, 257, 65537};
+    const size_t sizes[] = {0, 1, 2, 3, 4, 5, 47, 48, 49, 56, 57, 58, 255, 256, 257, 65537};
 
-    for (std::size_t size : sizes)
+    for (size_t size : sizes)
     {
         SCOPED_TRACE(size);
         std::string input;
         input.reserve(size);
-        for (std::size_t i = 0; i < size; ++i)
+        for (size_t i = 0; i < size; ++i)
         {
             input.push_back(static_cast<char>(i % 256));
         }
