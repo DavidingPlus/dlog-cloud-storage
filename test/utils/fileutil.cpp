@@ -6,7 +6,6 @@
 #include <iterator>
 #include <limits>
 #include <set>
-#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -14,16 +13,13 @@
 
 #include <bundle.h>
 
-#include "utils/common.h"
-#include "utils/fileutil.h"
-#include "utils/jsonutil.h"
+#include "fileutil.h"
 
 
 namespace
 {
 
     using utils::FileUtil;
-    using utils::JsonUtil;
 
     namespace fs = std::filesystem;
 
@@ -61,7 +57,22 @@ namespace
             EXPECT_FALSE(error) << error.message();
         }
 
-        fs::path path(const fs::path &name) const { return m_directory / name; }
+        fs::path path(std::string_view name) const { return m_directory / fs::u8path(name.begin(), name.end()); }
+
+        bool canCreateSymlinks() const
+        {
+            // Windows 等环境可能未授予符号链接权限；先探测能力，再执行相关用例。
+            const auto probe = path("symlink-probe");
+            std::error_code error;
+            fs::create_symlink("missing.txt", probe, error);
+            if (error) return false;
+            fs::remove(probe);
+
+            fs::create_directory_symlink(".", probe, error);
+            if (error) return false;
+            fs::remove(probe);
+            return true;
+        }
 
         // 直接用标准文件流准备输入和检查输出，避免读写接口同时出错时相互掩盖。
         static void writeFile(const fs::path &file, std::string_view content)
@@ -121,132 +132,6 @@ namespace
 } // namespace
 
 
-// 十六进制与 URL 解码。
-
-TEST(ServerUtilsTests, ToHexProducesUppercaseDigits)
-{
-    const std::string digits = "0123456789ABCDEF";
-
-    for (unsigned char value = 0; value < 16; ++value)
-    {
-        EXPECT_EQ(utils::toHex(value), static_cast<unsigned char>(digits[value]));
-    }
-}
-
-TEST(ServerUtilsTests, ToHexRejectsValuesOutsideOneNibble)
-{
-    for (unsigned int value = 16; value < 256; ++value)
-    {
-        SCOPED_TRACE(value);
-        EXPECT_THROW(utils::toHex(static_cast<unsigned char>(value)), std::invalid_argument);
-    }
-}
-
-TEST(ServerUtilsTests, FromHexAcceptsBothLetterCases)
-{
-    const std::string uppercase = "0123456789ABCDEF";
-    const std::string lowercase = "0123456789abcdef";
-
-    for (unsigned char value = 0; value < 16; ++value)
-    {
-        EXPECT_EQ(utils::fromHex(static_cast<unsigned char>(uppercase[value])), value);
-        EXPECT_EQ(utils::fromHex(static_cast<unsigned char>(lowercase[value])), value);
-    }
-}
-
-TEST(ServerUtilsTests, FromHexRejectsNonHexadecimalCharacters)
-{
-    const std::string valid = "0123456789ABCDEFabcdef";
-    for (unsigned int value = 0; value < 256; ++value)
-    {
-        const auto character = static_cast<unsigned char>(value);
-        if (valid.find(static_cast<char>(character)) != std::string::npos) continue;
-
-        SCOPED_TRACE(value);
-        EXPECT_THROW(utils::fromHex(character), std::invalid_argument);
-    }
-}
-
-TEST(ServerUtilsTests, UrlDecodePreservesUnescapedText)
-{
-    const std::string inputs[] = {"", "file.txt", "/download/a+b.txt", u8"云存储.txt"};
-
-    for (const auto &input : inputs)
-    {
-        SCOPED_TRACE(input);
-        EXPECT_EQ(utils::urlDecode(input), input);
-    }
-}
-
-TEST(ServerUtilsTests, UrlDecodeHandlesUtf8AndMixedCaseEscapes)
-{
-    EXPECT_EQ(utils::urlDecode("%e4%BA%91%E5%ad%98%e5%82%A8%20a%2Bb.txt"),
-              u8"云存储 a+b.txt");
-    EXPECT_EQ(utils::urlDecode("%2f%2F%3a"), "//:");
-}
-
-TEST(ServerUtilsTests, UrlDecodePreservesPlusAndDecodesOnlyOnce)
-{
-    EXPECT_EQ(utils::urlDecode("a+b%2Bc%20d"), "a+b+c d");
-    EXPECT_EQ(utils::urlDecode("%25"), "%");
-    EXPECT_EQ(utils::urlDecode("%252F"), "%2F");
-    EXPECT_EQ(utils::urlDecode("%25%32%46"), "%2F");
-}
-
-TEST(ServerUtilsTests, UrlDecodePreservesNulsAndHighBytes)
-{
-    const std::string bytes("\0\x01\x7f\x80\xff", 5);
-
-    EXPECT_EQ(utils::urlDecode("%00%01%7F%80%FF"), bytes);
-    EXPECT_EQ(utils::urlDecode(bytes), bytes);
-    EXPECT_EQ(utils::urlDecode(std::string("a\0%20b", 6)), std::string("a\0 b", 4));
-}
-
-TEST(ServerUtilsTests, UrlDecodeHandlesEveryEscapedByte)
-{
-    const std::string digits = "0123456789ABCDEF";
-    std::string encoded;
-    std::string expected;
-
-    // 独立构造所有字节的编码，避免使用待测的 toHex() 生成输入。
-    for (unsigned int value = 0; value < 256; ++value)
-    {
-        encoded.push_back('%');
-        encoded.push_back(digits[value / 16]);
-        encoded.push_back(digits[value % 16]);
-        expected.push_back(static_cast<char>(value));
-    }
-
-    EXPECT_EQ(utils::urlDecode(encoded), expected);
-}
-
-TEST(ServerUtilsTests, UrlDecodeRejectsMalformedEscapes)
-{
-    const std::string inputs[] = {
-        "%", "%0", "file%", "file%A", "%GG", "%G0", "%0g", "%1Z",
-        "%Z1", "% 0", "%%20", "valid%20then%", std::string("%\0A", 3)};
-
-    for (const auto &input : inputs)
-    {
-        SCOPED_TRACE(input);
-        EXPECT_THROW(utils::urlDecode(input), std::invalid_argument);
-    }
-}
-
-TEST(ServerUtilsTests, UrlDecodeRejectsEveryInvalidHexByteInEitherPosition)
-{
-    const std::string valid = "0123456789ABCDEFabcdef";
-    for (unsigned int value = 0; value < 256; ++value)
-    {
-        const auto character = static_cast<char>(value);
-        if (valid.find(character) != std::string::npos) continue;
-
-        SCOPED_TRACE(value);
-        EXPECT_THROW(utils::urlDecode(std::string("%") + character + '0'), std::invalid_argument);
-        EXPECT_THROW(utils::urlDecode(std::string("%0") + character), std::invalid_argument);
-    }
-}
-
 // 文件属性、读写和目录操作。
 
 TEST_F(FileUtilTests, ConstructorKeepsItsOwnPath)
@@ -293,11 +178,11 @@ TEST(FileUtilPathTests, FileNameUsesOnlyTheLastPathComponent)
         fs::path input;
         fs::path expected;
     } cases[] = {
-        {"", ""}, {"report.txt", "report.txt"}, {"data/report.tar.gz", "report.tar.gz"}, {"/missing/directory/report.txt", "report.txt"}, {"data/", ""}, {"/", ""}, {".", "."}, {"..", ".."}, {u8"不存在/云 存储.txt", u8"云 存储.txt"}};
+        {"", ""}, {"report.txt", "report.txt"}, {"data/report.tar.gz", "report.tar.gz"}, {"/missing/directory/report.txt", "report.txt"}, {"data/", ""}, {"/", ""}, {".", "."}, {"..", ".."}, {fs::u8path(u8"不存在/云 存储.txt"), fs::u8path(u8"云 存储.txt")}};
 
     for (const auto &item : cases)
     {
-        SCOPED_TRACE(item.input.string());
+        SCOPED_TRACE(item.input.u8string());
         EXPECT_EQ(FileUtil(item.input).fileName(), item.expected);
     }
 }
@@ -525,6 +410,8 @@ TEST_F(FileUtilTests, ExistsDistinguishesMissingFilesRegularFilesAndDirectories)
 
 TEST_F(FileUtilTests, ExistsFollowsSymbolicLinkTargets)
 {
+    if (!canCreateSymlinks()) GTEST_SKIP() << "Symbolic links are unavailable";
+
     writeFile(path("file.txt"), "data");
     fs::create_directory(path("directory"));
     fs::create_symlink("file.txt", path("file-link"));
@@ -538,6 +425,8 @@ TEST_F(FileUtilTests, ExistsFollowsSymbolicLinkTargets)
 
 TEST_F(FileUtilTests, FileAccessFollowsTheLinkButFileNameKeepsTheLinkName)
 {
+    if (!canCreateSymlinks()) GTEST_SKIP() << "Symbolic links are unavailable";
+
     const auto target = path("target.txt");
     writeFile(target, "original");
     fs::create_symlink("target.txt", path("file-link"));
@@ -618,6 +507,7 @@ TEST_F(FileUtilTests, ScanDirectoryKeepsTheRelativePathPrefix)
 {
     writeFile(path("report.txt"), "data");
     const auto relative = fs::relative(m_directory, fs::current_path());
+    if (relative.empty()) GTEST_SKIP() << "The temporary directory and working directory have different roots";
     ASSERT_TRUE(relative.is_relative());
 
     const auto files = FileUtil(relative).scanDirectory();
@@ -628,6 +518,8 @@ TEST_F(FileUtilTests, ScanDirectoryKeepsTheRelativePathPrefix)
 
 TEST_F(FileUtilTests, ScanDirectoryFollowsFileLinksAndSkipsDirectoryAndBrokenLinks)
 {
+    if (!canCreateSymlinks()) GTEST_SKIP() << "Symbolic links are unavailable";
+
     writeFile(path("target.txt"), "data");
     fs::create_directory(path("child"));
     fs::create_symlink("target.txt", path("file-link"));
@@ -786,227 +678,5 @@ TEST(FileUtilCompressionTests, RejectsInvalidFormatsEvenForEmptyContent)
         SCOPED_TRACE(format);
         EXPECT_THROW(FileUtil::Compress("data", format), std::invalid_argument);
         EXPECT_THROW(FileUtil::Compress(std::string_view{}, format), std::invalid_argument);
-    }
-}
-
-// JSON 值与文本转换。
-
-TEST(JsonUtilTests, SerializeProducesJsonReadableByJsonCpp)
-{
-    Json::Value value;
-    value["name"] = "report.txt";
-    value["size"] = Json::UInt64(4096);
-    value["ready"] = true;
-    value["metadata"]["owner"] = "alice";
-    value["tags"].append("documents");
-    value["tags"].append("backup");
-
-    const auto document = JsonUtil::Serialize(value);
-    Json::CharReaderBuilder builder;
-    std::istringstream stream(document);
-    Json::Value restored;
-    std::string errors;
-
-    ASSERT_TRUE(Json::parseFromStream(builder, stream, &restored, &errors)) << errors;
-    ASSERT_TRUE(restored.isObject());
-    EXPECT_EQ(restored.size(), value.size());
-    EXPECT_EQ(restored["name"].asString(), "report.txt");
-    // JSON 文本不区分有符号和无符号整数，读回后按数值比较。
-    EXPECT_EQ(restored["size"].asUInt64(), 4096U);
-    EXPECT_TRUE(restored["ready"].asBool());
-    EXPECT_EQ(restored["metadata"], value["metadata"]);
-    EXPECT_EQ(restored["tags"], value["tags"]);
-}
-
-TEST(JsonUtilTests, SerializeEmitsUtf8KeysAndValues)
-{
-    Json::Value value;
-    value[u8"文件名"] = u8"云存储/报告📦.txt";
-
-    const auto document = JsonUtil::Serialize(value);
-
-    EXPECT_NE(document.find(u8"文件名"), std::string::npos);
-    EXPECT_NE(document.find(u8"云存储/报告📦.txt"), std::string::npos);
-    EXPECT_EQ(JsonUtil::UnSerialize(document), value);
-}
-
-TEST(JsonUtilTests, SerializeEscapesControlCharactersAndPreservesTheirValues)
-{
-    Json::Value value;
-    const std::string text("a\0b\n\r\t\"\\", 8);
-    value["text"] = text;
-
-    const auto document = JsonUtil::Serialize(value);
-
-    EXPECT_EQ(document.find('\0'), std::string::npos);
-    for (const auto *escape : {"\\u0000", "\\n", "\\r", "\\t", "\\\"", "\\\\"})
-    {
-        SCOPED_TRACE(escape);
-        EXPECT_NE(document.find(escape), std::string::npos);
-    }
-    EXPECT_EQ(JsonUtil::UnSerialize(document)["text"].asString(), text);
-}
-
-TEST(JsonUtilTests, SerializeHandlesScalarRootsAndEmptyContainers)
-{
-    const struct
-    {
-        Json::Value value;
-        std::string expected;
-    } cases[] = {
-        {Json::Value(), "null"}, {Json::Value(true), "true"}, {Json::Value(false), "false"}, {Json::Value(-42), "-42"}, {Json::Value(1.25), "1.25"}, {Json::Value("text"), R"("text")"}, {Json::Value(Json::arrayValue), "[]"}, {Json::Value(Json::objectValue), "{}"}};
-
-    for (const auto &item : cases)
-    {
-        SCOPED_TRACE(item.expected);
-        EXPECT_EQ(JsonUtil::Serialize(item.value), item.expected);
-        EXPECT_EQ(JsonUtil::UnSerialize(item.expected), item.value);
-    }
-}
-
-TEST(JsonUtilTests, UnSerializeReadsNestedStorageMetadata)
-{
-    const auto value = JsonUtil::UnSerialize(R"({
-        "files": [{"name":"report.txt","size":4096}, {"name":"empty.txt","size":0}],
-        "compressed": true,
-        "ratio": 0.75,
-        "checksum": null,
-        "metadata": {"owner":"alice","version":2}
-    })");
-
-    ASSERT_TRUE(value.isObject());
-    ASSERT_TRUE(value["files"].isArray());
-    ASSERT_EQ(value["files"].size(), 2U);
-    EXPECT_EQ(value["files"][0]["name"].asString(), "report.txt");
-    EXPECT_EQ(value["files"][0]["size"].asUInt64(), 4096U);
-    EXPECT_EQ(value["files"][1]["size"].asUInt64(), 0U);
-    EXPECT_TRUE(value["compressed"].asBool());
-    EXPECT_DOUBLE_EQ(value["ratio"].asDouble(), 0.75);
-    EXPECT_TRUE(value["checksum"].isNull());
-    EXPECT_EQ(value["metadata"]["owner"].asString(), "alice");
-    EXPECT_EQ(value["metadata"]["version"].asInt(), 2);
-}
-
-TEST(JsonUtilTests, UnSerializeAcceptsWhitespaceAroundTheDocument)
-{
-    EXPECT_TRUE(JsonUtil::UnSerialize(" \t\r\n {} \n ").isObject());
-    EXPECT_TRUE(JsonUtil::UnSerialize(" \n [] \t ").isArray());
-    EXPECT_TRUE(JsonUtil::UnSerialize(" \n null \t ").isNull());
-    EXPECT_EQ(JsonUtil::UnSerialize(" \n 42 \t ").asInt(), 42);
-}
-
-TEST(JsonUtilTests, UnSerializeDecodesUnicodeEscapesAndSurrogatePairs)
-{
-    const auto value = JsonUtil::UnSerialize(R"({"text":"\u4e91\u5b58\u50a8\ud83d\udce6"})");
-
-    EXPECT_EQ(value["text"].asString(), u8"云存储📦");
-}
-
-TEST(JsonUtilTests, UnSerializeDecodesEscapedNulsAndOtherControlCharacters)
-{
-    const auto value = JsonUtil::UnSerialize(R"({"text":"\u0000\"\\\/\b\f\n\r\t"})");
-
-    EXPECT_EQ(value["text"].asString(), std::string("\0\"\\/\b\f\n\r\t", 9));
-}
-
-TEST(JsonUtilTests, Preserves64BitIntegerBoundariesAndDoublePrecision)
-{
-    const auto value = JsonUtil::UnSerialize("[-9223372036854775808,9223372036854775807,18446744073709551615,1.2345678901234567]");
-
-    ASSERT_EQ(value.size(), 4U);
-    EXPECT_EQ(value[0].asInt64(), std::numeric_limits<Json::Int64>::min());
-    EXPECT_EQ(value[1].asInt64(), std::numeric_limits<Json::Int64>::max());
-    EXPECT_EQ(value[2].asUInt64(), std::numeric_limits<Json::UInt64>::max());
-    EXPECT_DOUBLE_EQ(value[3].asDouble(), 1.2345678901234567);
-    EXPECT_EQ(JsonUtil::UnSerialize(JsonUtil::Serialize(value)), value);
-}
-
-TEST(JsonUtilTests, UnSerializeReadsOnlyTheSelectedStringView)
-{
-    const std::string backing = R"(PREFIX{"id":7,"name":"report.txt"}SUFFIX)";
-    const auto document = std::string_view(backing).substr(6, backing.size() - 12);
-
-    const auto value = JsonUtil::UnSerialize(document);
-
-    EXPECT_EQ(value["id"].asInt(), 7);
-    EXPECT_EQ(value["name"].asString(), "report.txt");
-}
-
-TEST(JsonUtilTests, UnSerializeDoesNotReadPastTheEndOfATruncatedView)
-{
-    const std::string complete = R"({"ok":true})";
-    const auto truncated = std::string_view(complete).substr(0, complete.size() - 1);
-
-    // 底层字符串是合法 JSON，但传入的视图缺少结尾的 '}'，不能偷偷读取视图之外的字节。
-    EXPECT_THROW(JsonUtil::UnSerialize(truncated), std::invalid_argument);
-}
-
-TEST(JsonUtilTests, UnSerializeRejectsEmptyAndMalformedDocuments)
-{
-    const std::string_view invalid[] = {
-        {}, "", " \t\n", "{", "[", R"({"key" 1})", R"({"key":})", R"({"key":1 "other":2})", "[1 2]", "{unquoted:1}", R"({"key":"unterminated})", R"({"key":"\q"})", R"({"key":"\u12xz"})", "[truee]", "[1e]", "[1.2.3]"};
-
-    for (const auto document : invalid)
-    {
-        SCOPED_TRACE(std::string(document));
-        EXPECT_THROW(JsonUtil::UnSerialize(document), std::invalid_argument);
-    }
-}
-
-TEST(JsonUtilTests, ParseFailuresIncludeTheJsonCppDiagnostic)
-{
-    try
-    {
-        JsonUtil::UnSerialize("{\n  \"name\":\n}");
-        FAIL() << "Expected a parsing error";
-    }
-    catch (const std::invalid_argument &error)
-    {
-        const std::string prefix = "JsonUtil::UnSerialize(): ";
-        const std::string message = error.what();
-        EXPECT_EQ(message.find(prefix), 0U);
-        EXPECT_GT(message.size(), prefix.size());
-    }
-}
-
-TEST(JsonUtilTests, UsesJsonCppDefaultCommentAndTrailingCommaRules)
-{
-    // 工具类沿用库的默认配置；第三方库测试中的严格模式没有应用到这个接口。
-    const auto value = JsonUtil::UnSerialize(R"({"id":/* metadata */7,})");
-
-    EXPECT_EQ(value["id"].asInt(), 7);
-}
-
-TEST(JsonUtilTests, AFailedParseDoesNotAffectLaterCalls)
-{
-    EXPECT_EQ(JsonUtil::UnSerialize(R"({"id":1})")["id"].asInt(), 1);
-    EXPECT_THROW(JsonUtil::UnSerialize("{"), std::invalid_argument);
-    EXPECT_EQ(JsonUtil::UnSerialize(R"({"id":2})")["id"].asInt(), 2);
-}
-
-TEST(JsonUtilTests, RoundTripsALargeStorageMetadataCollection)
-{
-    Json::Value metadata;
-    metadata["files"] = Json::Value(Json::arrayValue);
-    for (Json::ArrayIndex i = 0; i < 512; ++i)
-    {
-        Json::Value file;
-        file["name"] = u8"文件-" + std::to_string(i) + ".txt";
-        file["size"] = Json::UInt64(i) * 4096;
-        file["compressed"] = i % 2 == 0;
-        metadata["files"].append(file);
-    }
-
-    const auto restored = JsonUtil::UnSerialize(JsonUtil::Serialize(metadata));
-    ASSERT_TRUE(restored["files"].isArray());
-    ASSERT_EQ(restored["files"].size(), metadata["files"].size());
-    for (Json::ArrayIndex i = 0; i < metadata["files"].size(); ++i)
-    {
-        SCOPED_TRACE(i);
-        const auto &expected = metadata["files"][i];
-        const auto &actual = restored["files"][i];
-        EXPECT_EQ(actual["name"].asString(), expected["name"].asString());
-        EXPECT_EQ(actual["size"].asUInt64(), expected["size"].asUInt64());
-        EXPECT_EQ(actual["compressed"].asBool(), expected["compressed"].asBool());
     }
 }
