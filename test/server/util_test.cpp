@@ -66,7 +66,9 @@ TEST(ServerUtilTests, UrlDecodeHandlesUtf8AndMixedCaseEscapes)
 TEST(ServerUtilTests, UrlDecodePreservesPlusAndDecodesOnlyOnce)
 {
     EXPECT_EQ(server::urlDecode("a+b%2Bc%20d"), "a+b+c d");
+    EXPECT_EQ(server::urlDecode("%25"), "%");
     EXPECT_EQ(server::urlDecode("%252F"), "%2F");
+    EXPECT_EQ(server::urlDecode("%25%32%46"), "%2F");
 }
 
 TEST(ServerUtilTests, UrlDecodePreservesNulsAndHighBytes)
@@ -75,6 +77,25 @@ TEST(ServerUtilTests, UrlDecodePreservesNulsAndHighBytes)
 
     EXPECT_EQ(server::urlDecode("%00%01%7F%80%FF"), bytes);
     EXPECT_EQ(server::urlDecode(bytes), bytes);
+    EXPECT_EQ(server::urlDecode(std::string("a\0%20b", 6)), std::string("a\0 b", 4));
+}
+
+TEST(ServerUtilTests, UrlDecodeHandlesEveryEscapedByte)
+{
+    const std::string digits = "0123456789ABCDEF";
+    std::string encoded;
+    std::string expected;
+
+    // 独立构造所有字节的编码，避免使用待测的 toHex() 生成输入。
+    for (unsigned int value = 0; value < 256; ++value)
+    {
+        encoded.push_back('%');
+        encoded.push_back(digits[value / 16]);
+        encoded.push_back(digits[value % 16]);
+        expected.push_back(static_cast<char>(value));
+    }
+
+    EXPECT_EQ(server::urlDecode(encoded), expected);
 }
 
 TEST(ServerUtilTests, UrlDecodeRejectsMalformedEscapes)

@@ -8,12 +8,10 @@ DLOG_CLOUD_STORAGE_NAMESPACE_BEGIN(server)
 
 unsigned char toHex(unsigned char x)
 {
-    if (x > 15)
-    {
-        throw std::invalid_argument("hex value must be between 0 and 15");
-    }
+    if (x > 15) throw std::invalid_argument("toHex(): hex value must be between 0 and 15");
 
-    return static_cast<unsigned char>(x < 10 ? '0' + x : 'A' + x - 10);
+    // "0123456789ABCDEF" 的类型是 const char[17]（含末尾 '\0'），可以直接用 [x] 取字符。例如 x 为 10 时取出 'A'。
+    return static_cast<unsigned char>("0123456789ABCDEF"[x]);
 }
 
 unsigned char fromHex(unsigned char x)
@@ -22,16 +20,18 @@ unsigned char fromHex(unsigned char x)
     {
         return static_cast<unsigned char>(x - '0');
     }
-    if (x >= 'A' && x <= 'F')
+    else if (x >= 'A' && x <= 'F')
     {
         return static_cast<unsigned char>(x - 'A' + 10);
     }
-    if (x >= 'a' && x <= 'f')
+    else if (x >= 'a' && x <= 'f')
     {
         return static_cast<unsigned char>(x - 'a' + 10);
     }
-
-    throw std::invalid_argument("invalid hexadecimal character");
+    else
+    {
+        throw std::invalid_argument("fromHex(): invalid hexadecimal character");
+    }
 }
 
 std::string urlDecode(const std::string &str)
@@ -39,24 +39,28 @@ std::string urlDecode(const std::string &str)
     std::string decoded;
     decoded.reserve(str.size());
 
-    for (std::size_t i = 0; i < str.size(); ++i)
+    for (int i = 0; i < str.size(); ++i)
     {
-        if (str[i] != '%')
+        if ('%' != str[i])
         {
+            // 普通内容直接放入结果；路径中的 '+' 就是加号，不转换为空格。
             decoded.push_back(str[i]);
             continue;
         }
 
-        if (str.size() - i < 3)
-        {
-            throw std::invalid_argument("incomplete URL percent escape");
-        }
+        // 遇到 '%' 后，需要再读取两位十六进制数字。
+        if (str.size() - i < 3) throw std::invalid_argument("urlDecode(): incomplete URL percent escape");
 
-        const unsigned char high = fromHex(static_cast<unsigned char>(str[i + 1]));
-        const unsigned char low = fromHex(static_cast<unsigned char>(str[i + 2]));
-        decoded.push_back(static_cast<char>(high * 16 + low));
+        // 先把这两位字符转换为数值，再按“高位 * 16 + 低位”合成一个字节。
+        unsigned char high = fromHex(static_cast<unsigned char>(str[1 + i]));
+        unsigned char low = fromHex(static_cast<unsigned char>(str[2 + i]));
+        // 例如 "%20" 得到 2 * 16 + 0 = 32，将对应的空格放入结果。
+        decoded.push_back(static_cast<char>(16 * high + low));
+
+        // 后两位已经处理完，跳过它们，下一轮继续读取后面的内容。
         i += 2;
     }
+
 
     return decoded;
 }
