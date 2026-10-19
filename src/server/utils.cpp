@@ -66,11 +66,8 @@ std::string urlDecode(const std::string &str)
 }
 
 // TODO
-FileUtil::FileUtil(std::filesystem::path path) : m_path(std::move(path))
-{
-}
 
-std::uintmax_t FileUtil::fileSize() const
+uintmax_t FileUtil::fileSize() const
 {
 }
 
@@ -86,7 +83,7 @@ std::filesystem::path FileUtil::fileName() const
 {
 }
 
-std::string FileUtil::getPosLen(std::uintmax_t pos, size_t len) const
+std::string FileUtil::getPosLen(uintmax_t pos, size_t len) const
 {
 }
 

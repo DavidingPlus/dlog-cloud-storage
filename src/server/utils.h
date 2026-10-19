@@ -33,10 +33,14 @@ class FileUtil
 
 public:
 
-    explicit FileUtil(std::filesystem::path path);
+    // 按值接收路径，再移动到成员中保存。
+    // 1. 传入已有 path 变量时，先拷贝出参数，再把参数移动到 m_path，调用者的原变量保持不变。
+    // 2. 传入临时 path 对象时，C++17 可直接构造参数，再移动到成员中，避免复制路径内容。
+    // 也可以用 const path &，虽然传参时不拷贝，但保存到 m_path 时仍需拷贝一份。
+    explicit FileUtil(std::filesystem::path path) : m_path(std::move(path)) {}
 
     // 获取文件大小，单位为字节。
-    std::uintmax_t fileSize() const;
+    uintmax_t fileSize() const;
 
     // 获取最近访问时间。C++17 的 std::filesystem 不提供查询接口，先保留占位，后续确定处理方式。
     std::filesystem::file_time_type lastAccessTime() const;
@@ -48,7 +52,7 @@ public:
     std::filesystem::path fileName() const;
 
     // 从 pos 开始读取 len 个字节。
-    std::string getPosLen(std::uintmax_t pos, size_t len) const;
+    std::string getPosLen(uintmax_t pos, size_t len) const;
 
     // 读取整个文件的二进制内容。
     std::string getContent() const;
