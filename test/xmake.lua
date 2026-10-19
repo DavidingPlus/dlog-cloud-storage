@@ -10,9 +10,9 @@ add_requires("gtest")
 
 -- 测试分组的唯一清单，每项对应 test 下的一个目录。common 对所有平台生效；win32 和 linux 分别只在 Windows 和 Linux 目标平台生效。
 local gtest_groups = {
-    common = {"testrun", "third_party"},
+    common = {"testrun"},
     win32 = {},
-    linux = {"server"}
+    linux = {"server", "third_party"}
 }
 
 local active_gtest_groups = {}
