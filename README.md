@@ -11,7 +11,7 @@ xmake f -m debug --with_gtest=yes -y
 xmake test
 ```
 
-服务端工具测试集中在 `test/server/utils_test.cpp`，覆盖十六进制和 URL 解码、文件属性与二进制读写、目录和符号链接、压缩解压、JSON 转换及错误处理。文件测试使用独立临时目录并自动清理；权限用例在当前用户能够绕过权限限制时跳过，设备相关用例在对应设备不可用时跳过。`JsonUtil` 测试沿用接口当前的 JsonCpp 默认解析配置。
+通用工具位于 `src/utils/`，使用 `utils` 命名空间，构建为各平台共用的内部静态库。对应测试按源码拆分为 `test/utils/common.cpp`、`test/utils/fileutil.cpp` 和 `test/utils/jsonutil.cpp`，覆盖十六进制和 URL 解码、文件属性与二进制读写、目录和符号链接、压缩解压、JSON 转换及错误处理。文件测试使用独立临时目录并自动清理；权限用例在当前用户能够绕过权限限制时跳过；符号链接、设备或跨根路径相关用例在环境不支持时跳过。`JsonUtil` 测试沿用接口当前的 JsonCpp 默认解析配置。
 
 第三方库测试位于 `test/third_party/`。JsonCpp 测试覆盖值与容器操作、解析和序列化、流接口、Unicode 与空字节、64 位数值边界及大批量元数据往返。错误输入测试显式使用严格模式，检查语法错误、重复键、多余内容、非标准扩展和嵌套深度限制。
 
