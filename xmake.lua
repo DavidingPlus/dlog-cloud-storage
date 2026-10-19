@@ -11,7 +11,7 @@ local version = "0.0.0"
 local package_dependencies = {
     common = {},
     windows = {},
-    linux = {"bundle", "cpp-base64 2.rc.09"}
+    linux = {"bundle", "cpp-base64 2.rc.09", "jsoncpp"}
 }
 
 add_repositories("davidingplus https://github.com/DavidingPlus/xmake-repo.git")

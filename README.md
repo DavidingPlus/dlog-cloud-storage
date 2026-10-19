@@ -2,6 +2,17 @@
 
 基于 C++17 的轻量级云存储系统，集成 dlog 异步日志库，支持 Web 文件上传下载、普通存储和压缩存储。
 
+## 第三方库单元测试（Linux）
+
+`bundle`、`cpp-base64` 和官方 xmake-repo 的 `jsoncpp` 由 XMake 下载和链接，沿用项目当前构建模式的动态库配置。启用 GoogleTest 后运行：
+
+```bash
+xmake f -m debug --with_gtest=yes -y
+xmake test
+```
+
+测试位于 `test/third_party/`。JsonCpp 测试覆盖值与容器操作、解析和序列化、流接口、Unicode 与空字节、64 位数值边界及大批量元数据往返。错误输入测试显式使用严格模式，检查语法错误、重复键、多余内容、非标准扩展和嵌套深度限制。
+
 ## 服务端打包（Linux）
 
 使用 XMake 内置的 XPack 生成二进制发布包：

@@ -43,7 +43,7 @@ target("tests")
 
     if is_plat("linux") then
         add_deps("dlog-cloud-storage-server-static")
-        add_packages("bundle", "cpp-base64")
+        add_packages("bundle", "cpp-base64", "jsoncpp")
     end
 
     before_build(function ()
