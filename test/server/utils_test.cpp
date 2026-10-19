@@ -3,10 +3,10 @@
 #include <stdexcept>
 #include <string>
 
-#include "server/util.h"
+#include "server/utils.h"
 
 
-TEST(ServerUtilTests, ToHexProducesUppercaseDigits)
+TEST(ServerUtilsTests, ToHexProducesUppercaseDigits)
 {
     const std::string digits = "0123456789ABCDEF";
 
@@ -16,13 +16,13 @@ TEST(ServerUtilTests, ToHexProducesUppercaseDigits)
     }
 }
 
-TEST(ServerUtilTests, ToHexRejectsValuesOutsideOneNibble)
+TEST(ServerUtilsTests, ToHexRejectsValuesOutsideOneNibble)
 {
     EXPECT_THROW(server::toHex(16), std::invalid_argument);
     EXPECT_THROW(server::toHex(255), std::invalid_argument);
 }
 
-TEST(ServerUtilTests, FromHexAcceptsBothLetterCases)
+TEST(ServerUtilsTests, FromHexAcceptsBothLetterCases)
 {
     const std::string uppercase = "0123456789ABCDEF";
     const std::string lowercase = "0123456789abcdef";
@@ -34,7 +34,7 @@ TEST(ServerUtilTests, FromHexAcceptsBothLetterCases)
     }
 }
 
-TEST(ServerUtilTests, FromHexRejectsNonHexadecimalCharacters)
+TEST(ServerUtilsTests, FromHexRejectsNonHexadecimalCharacters)
 {
     const unsigned char invalid[] = {'/', ':', '@', 'G', 'Z', '[', '`', 'g', 'z', '{', ' ', 0, 255};
 
@@ -45,7 +45,7 @@ TEST(ServerUtilTests, FromHexRejectsNonHexadecimalCharacters)
     }
 }
 
-TEST(ServerUtilTests, UrlDecodePreservesUnescapedText)
+TEST(ServerUtilsTests, UrlDecodePreservesUnescapedText)
 {
     const std::string inputs[] = {"", "file.txt", "/download/a+b.txt", u8"云存储.txt"};
 
@@ -56,14 +56,14 @@ TEST(ServerUtilTests, UrlDecodePreservesUnescapedText)
     }
 }
 
-TEST(ServerUtilTests, UrlDecodeHandlesUtf8AndMixedCaseEscapes)
+TEST(ServerUtilsTests, UrlDecodeHandlesUtf8AndMixedCaseEscapes)
 {
     EXPECT_EQ(server::urlDecode("%e4%BA%91%E5%ad%98%e5%82%A8%20a%2Bb.txt"),
               u8"云存储 a+b.txt");
     EXPECT_EQ(server::urlDecode("%2f%2F%3a"), "//:");
 }
 
-TEST(ServerUtilTests, UrlDecodePreservesPlusAndDecodesOnlyOnce)
+TEST(ServerUtilsTests, UrlDecodePreservesPlusAndDecodesOnlyOnce)
 {
     EXPECT_EQ(server::urlDecode("a+b%2Bc%20d"), "a+b+c d");
     EXPECT_EQ(server::urlDecode("%25"), "%");
@@ -71,7 +71,7 @@ TEST(ServerUtilTests, UrlDecodePreservesPlusAndDecodesOnlyOnce)
     EXPECT_EQ(server::urlDecode("%25%32%46"), "%2F");
 }
 
-TEST(ServerUtilTests, UrlDecodePreservesNulsAndHighBytes)
+TEST(ServerUtilsTests, UrlDecodePreservesNulsAndHighBytes)
 {
     const std::string bytes("\0\x01\x7f\x80\xff", 5);
 
@@ -80,7 +80,7 @@ TEST(ServerUtilTests, UrlDecodePreservesNulsAndHighBytes)
     EXPECT_EQ(server::urlDecode(std::string("a\0%20b", 6)), std::string("a\0 b", 4));
 }
 
-TEST(ServerUtilTests, UrlDecodeHandlesEveryEscapedByte)
+TEST(ServerUtilsTests, UrlDecodeHandlesEveryEscapedByte)
 {
     const std::string digits = "0123456789ABCDEF";
     std::string encoded;
@@ -98,7 +98,7 @@ TEST(ServerUtilTests, UrlDecodeHandlesEveryEscapedByte)
     EXPECT_EQ(server::urlDecode(encoded), expected);
 }
 
-TEST(ServerUtilTests, UrlDecodeRejectsMalformedEscapes)
+TEST(ServerUtilsTests, UrlDecodeRejectsMalformedEscapes)
 {
     const std::string inputs[] = {
         "%", "%0", "file%", "file%A", "%GG", "%G0", "%0g", "%1Z",
