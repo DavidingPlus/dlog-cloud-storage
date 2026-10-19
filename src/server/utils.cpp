@@ -65,5 +65,58 @@ std::string urlDecode(const std::string &str)
     return decoded;
 }
 
+// TODO
+FileUtil::FileUtil(std::filesystem::path path) : m_path(std::move(path))
+{
+}
+
+std::uintmax_t FileUtil::fileSize() const
+{
+}
+
+std::filesystem::file_time_type FileUtil::lastAccessTime() const
+{
+}
+
+std::filesystem::file_time_type FileUtil::lastModifyTime() const
+{
+}
+
+std::filesystem::path FileUtil::fileName() const
+{
+}
+
+std::string FileUtil::getPosLen(std::uintmax_t pos, size_t len) const
+{
+}
+
+std::string FileUtil::getContent() const
+{
+}
+
+void FileUtil::setContent(std::string_view content) const
+{
+}
+
+void FileUtil::compress(std::string_view content, int format) const
+{
+}
+
+void FileUtil::unCompress(const std::filesystem::path &downloadPath) const
+{
+}
+
+bool FileUtil::exists() const
+{
+}
+
+void FileUtil::createDirectory() const
+{
+}
+
+std::vector<std::filesystem::path> FileUtil::scanDirectory() const
+{
+}
+
 
 DLOG_CLOUD_STORAGE_NAMESPACE_END
