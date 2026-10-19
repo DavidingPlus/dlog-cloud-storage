@@ -9,9 +9,9 @@ local version = "0.0.0"
 -- 项目包依赖的唯一清单，每项填写 XMake 依赖规格字符串，例如 "fmt >=10.2.1"。common 对所有平台生效；windows 和 linux 分别只在对应目标平台生效。
 -- 此表同时驱动 add_requires 和 target 的 add_packages；新增依赖只需在这里登记。
 local package_dependencies = {
-    common = {},
+    common = {"bundle", "jsoncpp"},
     windows = {},
-    linux = {"bundle", "cpp-base64 2.rc.09", "jsoncpp"}
+    linux = {"cpp-base64 2.rc.09"}
 }
 
 add_repositories("davidingplus https://github.com/DavidingPlus/xmake-repo.git")
@@ -86,36 +86,36 @@ if install_in_place then
 end
 
 
--- 服务端及其内部静态库仅在 Linux 目标平台下构建。
+-- 跨平台工具静态库供主程序、单元测试和开发示例共用，不安装到应用发布目录。
+target(project_name .. "-utils-static")
+    set_default(false)
+    set_kind("static")
+
+    apply_current_platform_target_config()
+
+    for _, requirement in ipairs(active_package_dependencies) do
+        add_packages(package_name_from_spec(requirement), {public = true})
+    end
+
+    set_targetdir("$(builddir)/$(plat)/$(arch)/$(mode)/lib/")
+
+    add_files("src/utils/**.cpp")
+
+    -- public 只用于向项目内依赖此库的目标传递配置，不代表对外发布头文件。
+    add_includedirs("$(builddir)/config/", {public = true})
+    add_includedirs("src", os.dirs("src/**"), {public = true})
+target_end()
+
+
+-- 服务端仅在 Linux 目标平台下构建。
 if is_plat("linux") then
-    -- 内部静态库供主程序、单元测试和开发示例共用，不安装到应用发布目录。
-    target(project_name .. "-server-static")
-        set_default(false)
-        set_kind("static")
-
-        apply_current_platform_target_config()
-
-        for _, requirement in ipairs(active_package_dependencies) do
-            add_packages(package_name_from_spec(requirement), {public = true})
-        end
-
-        set_targetdir("$(builddir)/$(plat)/$(arch)/$(mode)/lib/")
-
-        -- 匹配服务端源码，排除主程序入口。
-        add_files("src/server/**.cpp|main.cpp")
-
-        -- public 只用于向项目内依赖此库的目标传递配置，不代表对外发布头文件。
-        add_includedirs("$(builddir)/config/", {public = true})
-        add_includedirs("src", os.dirs("src/**"), {public = true})
-    target_end()
-
     target(project_name .. "-server")
         set_kind("binary")
 
         apply_current_platform_target_config()
 
-        add_deps(project_name .. "-server-static")
-        add_files("src/server/main.cpp")
+        add_deps(project_name .. "-utils-static")
+        add_files("src/server/**.cpp")
         set_targetdir("$(builddir)/$(plat)/$(arch)/$(mode)/bin/")
 
         -- 关闭为项目内动态库依赖自动添加的 RPATH，不影响下面的手动设置。当前内部库为静态库，此项不是必需；保留以显式控制自动添加行为。

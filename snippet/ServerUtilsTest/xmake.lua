@@ -1,5 +1,5 @@
 target("ServerUtilsTest")
     set_kind("binary")
     add_files("main.cpp")
-    add_deps("dlog-cloud-storage-server-static")
+    add_deps("dlog-cloud-storage-utils-static")
 target_end()

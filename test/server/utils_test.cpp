@@ -14,14 +14,16 @@
 
 #include <bundle.h>
 
-#include "server/utils.h"
+#include "utils/common.h"
+#include "utils/fileutil.h"
+#include "utils/jsonutil.h"
 
 
 namespace
 {
 
-    using server::FileUtil;
-    using server::JsonUtil;
+    using utils::FileUtil;
+    using utils::JsonUtil;
 
     namespace fs = std::filesystem;
 
@@ -127,7 +129,7 @@ TEST(ServerUtilsTests, ToHexProducesUppercaseDigits)
 
     for (unsigned char value = 0; value < 16; ++value)
     {
-        EXPECT_EQ(server::toHex(value), static_cast<unsigned char>(digits[value]));
+        EXPECT_EQ(utils::toHex(value), static_cast<unsigned char>(digits[value]));
     }
 }
 
@@ -136,7 +138,7 @@ TEST(ServerUtilsTests, ToHexRejectsValuesOutsideOneNibble)
     for (unsigned int value = 16; value < 256; ++value)
     {
         SCOPED_TRACE(value);
-        EXPECT_THROW(server::toHex(static_cast<unsigned char>(value)), std::invalid_argument);
+        EXPECT_THROW(utils::toHex(static_cast<unsigned char>(value)), std::invalid_argument);
     }
 }
 
@@ -147,8 +149,8 @@ TEST(ServerUtilsTests, FromHexAcceptsBothLetterCases)
 
     for (unsigned char value = 0; value < 16; ++value)
     {
-        EXPECT_EQ(server::fromHex(static_cast<unsigned char>(uppercase[value])), value);
-        EXPECT_EQ(server::fromHex(static_cast<unsigned char>(lowercase[value])), value);
+        EXPECT_EQ(utils::fromHex(static_cast<unsigned char>(uppercase[value])), value);
+        EXPECT_EQ(utils::fromHex(static_cast<unsigned char>(lowercase[value])), value);
     }
 }
 
@@ -161,7 +163,7 @@ TEST(ServerUtilsTests, FromHexRejectsNonHexadecimalCharacters)
         if (valid.find(static_cast<char>(character)) != std::string::npos) continue;
 
         SCOPED_TRACE(value);
-        EXPECT_THROW(server::fromHex(character), std::invalid_argument);
+        EXPECT_THROW(utils::fromHex(character), std::invalid_argument);
     }
 }
 
@@ -172,32 +174,32 @@ TEST(ServerUtilsTests, UrlDecodePreservesUnescapedText)
     for (const auto &input : inputs)
     {
         SCOPED_TRACE(input);
-        EXPECT_EQ(server::urlDecode(input), input);
+        EXPECT_EQ(utils::urlDecode(input), input);
     }
 }
 
 TEST(ServerUtilsTests, UrlDecodeHandlesUtf8AndMixedCaseEscapes)
 {
-    EXPECT_EQ(server::urlDecode("%e4%BA%91%E5%ad%98%e5%82%A8%20a%2Bb.txt"),
+    EXPECT_EQ(utils::urlDecode("%e4%BA%91%E5%ad%98%e5%82%A8%20a%2Bb.txt"),
               u8"云存储 a+b.txt");
-    EXPECT_EQ(server::urlDecode("%2f%2F%3a"), "//:");
+    EXPECT_EQ(utils::urlDecode("%2f%2F%3a"), "//:");
 }
 
 TEST(ServerUtilsTests, UrlDecodePreservesPlusAndDecodesOnlyOnce)
 {
-    EXPECT_EQ(server::urlDecode("a+b%2Bc%20d"), "a+b+c d");
-    EXPECT_EQ(server::urlDecode("%25"), "%");
-    EXPECT_EQ(server::urlDecode("%252F"), "%2F");
-    EXPECT_EQ(server::urlDecode("%25%32%46"), "%2F");
+    EXPECT_EQ(utils::urlDecode("a+b%2Bc%20d"), "a+b+c d");
+    EXPECT_EQ(utils::urlDecode("%25"), "%");
+    EXPECT_EQ(utils::urlDecode("%252F"), "%2F");
+    EXPECT_EQ(utils::urlDecode("%25%32%46"), "%2F");
 }
 
 TEST(ServerUtilsTests, UrlDecodePreservesNulsAndHighBytes)
 {
     const std::string bytes("\0\x01\x7f\x80\xff", 5);
 
-    EXPECT_EQ(server::urlDecode("%00%01%7F%80%FF"), bytes);
-    EXPECT_EQ(server::urlDecode(bytes), bytes);
-    EXPECT_EQ(server::urlDecode(std::string("a\0%20b", 6)), std::string("a\0 b", 4));
+    EXPECT_EQ(utils::urlDecode("%00%01%7F%80%FF"), bytes);
+    EXPECT_EQ(utils::urlDecode(bytes), bytes);
+    EXPECT_EQ(utils::urlDecode(std::string("a\0%20b", 6)), std::string("a\0 b", 4));
 }
 
 TEST(ServerUtilsTests, UrlDecodeHandlesEveryEscapedByte)
@@ -215,7 +217,7 @@ TEST(ServerUtilsTests, UrlDecodeHandlesEveryEscapedByte)
         expected.push_back(static_cast<char>(value));
     }
 
-    EXPECT_EQ(server::urlDecode(encoded), expected);
+    EXPECT_EQ(utils::urlDecode(encoded), expected);
 }
 
 TEST(ServerUtilsTests, UrlDecodeRejectsMalformedEscapes)
@@ -227,7 +229,7 @@ TEST(ServerUtilsTests, UrlDecodeRejectsMalformedEscapes)
     for (const auto &input : inputs)
     {
         SCOPED_TRACE(input);
-        EXPECT_THROW(server::urlDecode(input), std::invalid_argument);
+        EXPECT_THROW(utils::urlDecode(input), std::invalid_argument);
     }
 }
 
@@ -240,8 +242,8 @@ TEST(ServerUtilsTests, UrlDecodeRejectsEveryInvalidHexByteInEitherPosition)
         if (valid.find(character) != std::string::npos) continue;
 
         SCOPED_TRACE(value);
-        EXPECT_THROW(server::urlDecode(std::string("%") + character + '0'), std::invalid_argument);
-        EXPECT_THROW(server::urlDecode(std::string("%0") + character), std::invalid_argument);
+        EXPECT_THROW(utils::urlDecode(std::string("%") + character + '0'), std::invalid_argument);
+        EXPECT_THROW(utils::urlDecode(std::string("%0") + character), std::invalid_argument);
     }
 }
 
