@@ -10,9 +10,9 @@ add_requires("gtest")
 
 -- 测试分组的唯一清单，每项对应 test 下的一个目录。common 对所有平台生效；win32 和 linux 分别只在 Windows 和 Linux 目标平台生效。
 local gtest_groups = {
-    common = {"testrun", "utils"},
+    common = {"testrun", "utils", "third_party"},
     win32 = {},
-    linux = {"third_party"}
+    linux = {}
 }
 
 local active_gtest_groups = {}
@@ -40,11 +40,8 @@ target("tests")
     set_targetdir("$(builddir)/$(plat)/$(arch)/$(mode)/test")
 
     add_packages("gtest")
+    add_packages("bundle", "cpp-base64", "jsoncpp")
     add_deps("dlog-cloud-storage-utils-static")
-
-    if is_plat("linux") then
-        add_packages("cpp-base64")
-    end
 
     before_build(function ()
         os.tryrm("$(builddir)/$(plat)/$(arch)/$(mode)/test/gtest")
