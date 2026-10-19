@@ -54,13 +54,15 @@ public:
     std::filesystem::path fileName() const { return m_path.filename(); }
 
     // 从第 pos 个字节（从 0 计数）开始，读取 len 个字节。例如文件内容为 "abcdef"，getPosLen(2, 3) 返回 "cde"。按二进制读取，保留 '\0'；len 为 0 时返回空字符串，此时 pos 可以等于文件大小。
-    // 范围越界抛出 std::out_of_range，超出长度限制抛出 std::length_error。文件大小查询失败时抛出 std::filesystem::filesystem_error；打开、定位或读取失败时抛出 std::ios_base::failure。
+    // 范围越界抛出 std::out_of_range，超出长度限制抛出 std::length_error。文件大小查询失败时抛出 std::filesystem::filesystem_error；打开、定位、读取或关闭失败时抛出 std::ios_base::failure。
     std::string getPosLen(uintmax_t pos, size_t len) const;
 
     // 从文件开头读取整个文件，复用 getPosLen()；空文件返回空字符串，错误处理与 getPosLen() 相同。
     std::string getContent() const { return getPosLen(0, static_cast<size_t>(fileSize())); }
 
-    // 将二进制内容覆盖写入文件。
+    // 将 content 中的全部字节覆盖写入文件，保留 '\0'；文件不存在时创建，content 为空时清空文件。
+    // 超出文件流的长度限制时抛出 std::length_error；打开、写入或关闭失败时抛出 std::ios_base::failure。
+    // 正常返回表示已将数据交给操作系统并关闭文件，不保证数据已落盘。
     void setContent(std::string_view content) const;
 
     // 按 format 指定的格式压缩 content，将结果写入当前路径的文件。

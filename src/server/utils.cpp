@@ -77,7 +77,7 @@ std::string FileUtil::getPosLen(uintmax_t pos, size_t len) const
     // 文件流的位置和读取长度使用有符号类型，确认能容纳后再转换。
     if (pos > static_cast<uintmax_t>(std::numeric_limits<std::streamoff>::max()) || len > static_cast<uintmax_t>(std::numeric_limits<std::streamsize>::max())) throw std::length_error("FileUtil::getPosLen(): requested range exceeds stream limits");
 
-    // 文件输入流，打开的文件由析构函数关闭。
+    // 文件输入流。中途抛出异常时，已打开的文件仍会在析构时自动关闭。
     std::ifstream file;
 
     // failbit：操作失败，例如文件打开失败、定位失败，或者没有读满要求的字节数。
@@ -96,12 +96,29 @@ std::string FileUtil::getPosLen(uintmax_t pos, size_t len) const
     // std::ifstream 的 read()：从文件当前读取位置开始，读取 len 个字节，写入 content。
     if (0 != len) file.read(content.data(), static_cast<std::streamsize>(len));
 
+    file.close();
+
 
     return content;
 }
 
 void FileUtil::setContent(std::string_view content) const
 {
+    // 先检查长度，再打开文件，避免参数不合法时就清空已有内容。
+    if (content.size() > static_cast<uintmax_t>(std::numeric_limits<std::streamsize>::max())) throw std::length_error("FileUtil::setContent(): content exceeds stream limits");
+
+    std::ofstream file;
+    file.exceptions(std::ios::failbit | std::ios::badbit);
+
+    // binary 按原始字节写入；trunc 清空已有内容，保证写入较短内容时不会留下旧文件的尾部。
+    file.open(m_path, std::ios::binary | std::ios::trunc);
+
+    // 按明确长度写入，不会在遇到 '\0' 时提前停止；空内容只需清空文件。
+    if (!content.empty()) file.write(content.data(), static_cast<std::streamsize>(content.size()));
+
+    // close() 会写出文件流缓冲区中剩余的数据并关闭文件，析构自动关闭时也会尝试做这些事。
+    // 这里显式调用，是为了在函数返回前检查最后的写出和关闭是否失败。写出的语义是把数据交给操作系统，操作系统可能先缓存再落盘；close() 成功不保证已落盘。若需要等待持久化完成，还要配合如 Linux 下 fsync() 等同步接口。
+    file.close();
 }
 
 void FileUtil::compress(std::string_view content, int format) const
