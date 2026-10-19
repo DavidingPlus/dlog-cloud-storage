@@ -39,23 +39,26 @@ public:
     // 也可以用 const path &，虽然传参时不拷贝，但保存到 m_path 时仍需拷贝一份。
     explicit FileUtil(std::filesystem::path path) : m_path(std::move(path)) {}
 
-    // 获取文件大小，单位为字节。
-    uintmax_t fileSize() const;
+    // 获取普通文件的大小，单位为字节；空文件返回 0，查询失败时抛出 std::filesystem::filesystem_error。
+    uintmax_t fileSize() const { return std::filesystem::file_size(m_path); }
 
-    // 获取最近访问时间。C++17 的 std::filesystem 不提供查询接口，先保留占位，后续确定处理方式。
-    std::filesystem::file_time_type lastAccessTime() const;
+    // std::filesystem 不提供查询最近访问时间的接口，需要额外适配平台 API 和时间类型，很麻烦。暂不实现此接口。
+    // std::filesystem::file_time_type lastAccessTime() const;
 
-    // 获取最近修改时间。
-    std::filesystem::file_time_type lastModifyTime() const;
+    // 获取文件内容最近一次修改的时间；查询失败时抛出 std::filesystem::filesystem_error。
+    // 返回文件系统时钟的时间点，不应直接当作 time_t 使用。
+    std::filesystem::file_time_type lastModifyTime() const { return std::filesystem::last_write_time(m_path); }
 
-    // 从路径中提取文件名，例如 data/report.txt -> report.txt。
-    std::filesystem::path fileName() const;
+    // 提取路径末尾的名称，例如 data/report.txt -> report.txt。不访问磁盘，不关心文件存不存在。
+    // 路径以目录分隔符结尾时返回空路径，例如 data/ -> 空路径。
+    std::filesystem::path fileName() const { return m_path.filename(); }
 
-    // 从 pos 开始读取 len 个字节。
+    // 从第 pos 个字节（从 0 计数）开始，读取 len 个字节。例如文件内容为 "abcdef"，getPosLen(2, 3) 返回 "cde"。按二进制读取，保留 '\0'；len 为 0 时返回空字符串，此时 pos 可以等于文件大小。
+    // 范围越界抛出 std::out_of_range，超出长度限制抛出 std::length_error。文件大小查询失败时抛出 std::filesystem::filesystem_error；打开、定位或读取失败时抛出 std::ios_base::failure。
     std::string getPosLen(uintmax_t pos, size_t len) const;
 
-    // 读取整个文件的二进制内容。
-    std::string getContent() const;
+    // 从文件开头读取整个文件，复用 getPosLen()；空文件返回空字符串，错误处理与 getPosLen() 相同。
+    std::string getContent() const { return getPosLen(0, static_cast<size_t>(fileSize())); }
 
     // 将二进制内容覆盖写入文件。
     void setContent(std::string_view content) const;

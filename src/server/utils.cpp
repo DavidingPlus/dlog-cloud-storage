@@ -1,5 +1,7 @@
 #include "server/utils.h"
 
+#include <fstream>
+#include <limits>
 #include <stdexcept>
 
 
@@ -65,30 +67,37 @@ std::string urlDecode(const std::string &str)
     return decoded;
 }
 
-// TODO
-
-uintmax_t FileUtil::fileSize() const
-{
-}
-
-std::filesystem::file_time_type FileUtil::lastAccessTime() const
-{
-}
-
-std::filesystem::file_time_type FileUtil::lastModifyTime() const
-{
-}
-
-std::filesystem::path FileUtil::fileName() const
-{
-}
-
 std::string FileUtil::getPosLen(uintmax_t pos, size_t len) const
 {
-}
+    auto size = fileSize();
 
-std::string FileUtil::getContent() const
-{
+    // 第二个判断条件，用减法控制范围，避免 pos + len 在数值很大时溢出。
+    if (pos > size || len > size - pos) throw std::out_of_range("FileUtil::getPosLen(): requested range exceeds file size");
+
+    // 文件流的位置和读取长度使用有符号类型，确认能容纳后再转换。
+    if (pos > static_cast<uintmax_t>(std::numeric_limits<std::streamoff>::max()) || len > static_cast<uintmax_t>(std::numeric_limits<std::streamsize>::max())) throw std::length_error("FileUtil::getPosLen(): requested range exceeds stream limits");
+
+    // 文件输入流，打开的文件由析构函数关闭。
+    std::ifstream file;
+
+    // failbit：操作失败，例如文件打开失败、定位失败，或者没有读满要求的字节数。
+    // badbit：文件流出现严重错误，例如底层读取出错。
+    file.exceptions(std::ios::failbit | std::ios::badbit);
+
+    file.open(m_path, std::ios::binary);
+
+    // 把偏移位置移动到以 __dir 为起点，偏移量为 __off 的位置。
+    // 第一个参数 __off：偏移量是多少。
+    // 第二个参数 __dir：相对哪里偏移。std::ios::beg 文件开头；std::ios::cur 当前读取位置；std::ios::end 文件末尾。
+    file.seekg(static_cast<std::streamoff>(pos), std::ios::beg);
+
+    // 先分配 len 个字节，再直接读入字符串，避免把二进制内容当作以 '\0' 结尾的文本。
+    std::string content(len, '\0');
+    // std::ifstream 的 read()：从文件当前读取位置开始，读取 len 个字节，写入 content。
+    if (0 != len) file.read(content.data(), static_cast<std::streamsize>(len));
+
+
+    return content;
 }
 
 void FileUtil::setContent(std::string_view content) const
