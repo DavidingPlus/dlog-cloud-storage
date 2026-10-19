@@ -4,6 +4,8 @@
 #include <limits>
 #include <stdexcept>
 
+#include <bundle.h>
+
 
 DLOG_CLOUD_STORAGE_NAMESPACE_BEGIN(server)
 
@@ -121,24 +123,39 @@ void FileUtil::setContent(std::string_view content) const
     file.close();
 }
 
-void FileUtil::compress(std::string_view content, int format) const
-{
-}
-
-void FileUtil::unCompress(const std::filesystem::path &downloadPath) const
-{
-}
-
-bool FileUtil::exists() const
-{
-}
-
-void FileUtil::createDirectory() const
-{
-}
-
 std::vector<std::filesystem::path> FileUtil::scanDirectory() const
 {
+    std::vector<std::filesystem::path> res;
+
+    // directory_iterator 表示只遍历这一层；is_regular_file() 排除目录和其他特殊文件。
+    for (auto &entry : std::filesystem::directory_iterator(m_path))
+    {
+        if (entry.is_regular_file()) res.push_back(entry.path());
+    }
+
+    return res;
+}
+
+std::string FileUtil::Compress(std::string_view content, int format)
+{
+    if (format < bundle::RAW || format > bundle::BZIP2) throw std::invalid_argument("FileUtil::Compress(): invalid bundle format");
+
+    std::string packed;
+    bundle::pack(static_cast<unsigned int>(format), packed, content);
+
+
+    return packed;
+}
+
+std::string FileUtil::UnCompress(std::string_view content)
+{
+    if (content.empty()) return {};
+
+    std::string unpacked;
+    bundle::unpack(unpacked, content);
+
+
+    return unpacked;
 }
 
 

@@ -65,20 +65,23 @@ public:
     // 正常返回表示已将数据交给操作系统并关闭文件，不保证数据已落盘。
     void setContent(std::string_view content) const;
 
-    // 按 format 指定的格式压缩 content，将结果写入当前路径的文件。
-    void compress(std::string_view content, int format) const;
+    // 判断文件或目录是否存在；不存在时返回 false，其他查询错误抛出 std::filesystem::filesystem_error。
+    // 符号链接按其目标是否存在判断。
+    bool exists() const { return std::filesystem::exists(m_path); }
 
-    // 读取当前路径的压缩文件，解压后写入 downloadPath 指定的文件。
-    void unCompress(const std::filesystem::path &downloadPath) const;
+    // 创建目录，包括尚不存在的父目录；目录已存在时直接返回。路径已存在但不是目录，或创建失败时抛出 std::filesystem::filesystem_error。
+    void createDirectory() const { std::filesystem::create_directories(m_path); }
 
-    // 判断文件或目录是否存在。
-    bool exists() const;
-
-    // 创建目录，包括尚不存在的父目录。
-    void createDirectory() const;
-
-    // 扫描当前目录中的普通文件，不递归进入子目录。
+    // 扫描路径所指目录中的普通文件，不递归进入子目录。扫描失败时抛出 std::filesystem::filesystem_error。
     std::vector<std::filesystem::path> scanDirectory() const;
+
+
+    // 按 bundle 的 format 编号（例如 bundle::LZIP）压缩 content，返回压缩结果。
+    // 空内容返回空字符串；压缩不生效时按 bundle 的约定返回原内容；非法编号抛出 std::invalid_argument。
+    static std::string Compress(std::string_view content, int format);
+
+    // 调用 bundle 解压 content，返回解压结果；空内容返回空字符串。
+    static std::string UnCompress(std::string_view content);
 
 
 private:
