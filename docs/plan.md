@@ -8,7 +8,7 @@
 
 参考项目为 [Kama-AsynLogSystem-CloudStorage](https://github.com/youngyangyang04/Kama-AsynLogSystem-CloudStorage)。保留 [dlog](https://github.com/DavidingPlus/dlog) 作为独立日志库，云存储项目依赖它，存储业务拥有自己的模块和测试。
 
-本项目交付的是可执行程序，不作为公共库发布。代码按业务模块组织，目前不专门引入统一的 `storage` 命名空间；调用 dlog 时使用它已有的接口和命名空间。
+本项目交付的是可执行程序，不作为公共库发布。客户端与服务端分别使用 `client`、`server` 命名空间，`main()` 保留在全局命名空间；调用 dlog 时使用它已有的接口和命名空间。
 
 构建时将应用入口与其余源码分开：
 
