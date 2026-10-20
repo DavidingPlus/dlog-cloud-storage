@@ -44,11 +44,11 @@ private:
     Config();
 
 
-    // 服务端口。
-    int m_serverPort = 0;
-
     // 服务地址。
     std::string m_serverIp;
+
+    // 服务端口。
+    int m_serverPort = 0;
 
     // 下载 URL 前缀。
     std::string m_downloadPrefix;
