@@ -20,7 +20,7 @@ DLOG_CLOUD_STORAGE_NAMESPACE_BEGIN(server)
 struct FileMetadata
 {
 
-    // 根据传入的文件路径，生成该文件的元数据信息的结构体，相对路径以可执行文件所在目录为基准。
+    // 根据传入文件路径生成元数据，返回对象中的 m_absoluteFilePath 始终为绝对路径。传入的路径若是绝对路径直接使用，相对路径以可执行文件所在目录为基准。
     static FileMetadata FromFile(const std::filesystem::path &filePath);
 
 
@@ -30,8 +30,8 @@ struct FileMetadata
     // 文件大小，单位为字节。
     size_t m_fileSize = 0;
 
-    // 文件存储路径，相对路径以可执行文件所在目录为基准。
-    std::filesystem::path m_filePath;
+    // 文件的绝对路径。
+    std::filesystem::path m_absoluteFilePath;
 
     // 下载请求 URL 中的资源路径。
     std::string m_url;

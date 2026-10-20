@@ -106,7 +106,7 @@ namespace
             server::FileMetadata info;
             info.m_mtime = fs::file_time_type(fs::file_time_type::duration(mtime));
             info.m_fileSize = fileSize;
-            info.m_filePath = fs::path("./data") / name;
+            info.m_absoluteFilePath = utils::executableDirectory() / "./data" / name;
             info.m_url = "/download/" + name;
             return info;
         }
@@ -116,16 +116,17 @@ namespace
             Json::Value item;
             item["mtime"] = static_cast<Json::Int64>(info.m_mtime.time_since_epoch().count());
             item["file_size"] = static_cast<Json::UInt64>(info.m_fileSize);
-            item["storage_path"] = info.m_filePath.string();
+            item["absolute_file_path"] = info.m_absoluteFilePath.string();
             item["url"] = info.m_url;
             return item;
         }
 
         static void ExpectInfo(const server::FileMetadata &actual, const server::FileMetadata &expected)
         {
+            EXPECT_TRUE(actual.m_absoluteFilePath.is_absolute());
             EXPECT_EQ(actual.m_mtime, expected.m_mtime);
             EXPECT_EQ(actual.m_fileSize, expected.m_fileSize);
-            EXPECT_EQ(actual.m_filePath, expected.m_filePath);
+            EXPECT_EQ(actual.m_absoluteFilePath, expected.m_absoluteFilePath);
             EXPECT_EQ(actual.m_url, expected.m_url);
         }
 
@@ -164,7 +165,7 @@ TEST(FileMetadataTests, CreatesMetadataFromFile)
 
         EXPECT_EQ(info.m_mtime, fs::last_write_time(file));
         EXPECT_EQ(info.m_fileSize, 5U);
-        EXPECT_EQ(info.m_filePath, file);
+        EXPECT_EQ(info.m_absoluteFilePath, file);
         EXPECT_EQ(info.m_url, server::Config::GetInstance().getDownloadPrefix() + file.filename().string());
     });
 
@@ -198,7 +199,8 @@ TEST_F(DataManagerTests, FileMetadataUsesExecutableDirectoryAfterWorkingDirector
 
         EXPECT_EQ(info.m_mtime, fs::last_write_time(file));
         EXPECT_EQ(info.m_fileSize, 5U);
-        EXPECT_EQ(info.m_filePath, filePath);
+        EXPECT_TRUE(info.m_absoluteFilePath.is_absolute());
+        EXPECT_EQ(info.m_absoluteFilePath, file);
         EXPECT_EQ(info.m_url, server::Config::GetInstance().getDownloadPrefix() + u8"报告 一.txt");
     }
 }
@@ -223,16 +225,18 @@ TEST_F(DataManagerTests, ConstructorLoadsAllFieldsFromConfiguredFile)
 {
     // 使用独立的 JSON 样例，避免准备数据的代码与被测代码同时写错字段。
     utils::FileUtil(m_filePath).setContent(R"([
-        {"mtime": -1234567890123, "file_size": 17, "storage_path": "./data/first.txt", "url": "/download/first.txt"},
-        {"mtime": 9876543210123, "file_size": 4294967297, "storage_path": "./data/second.txt", "url": "/download/second.txt"}
+        {"mtime": -1234567890123, "file_size": 17, "absolute_file_path": "/data/first.txt", "url": "/download/first.txt"},
+        {"mtime": 9876543210123, "file_size": 4294967297, "absolute_file_path": "/data/second.txt", "url": "/download/second.txt"}
     ])");
-    const auto first = MakeInfo("first.txt");
-    const auto second = MakeInfo("second.txt", 4294967297ULL, 9876543210123LL);
+    auto first = MakeInfo("first.txt");
+    auto second = MakeInfo("second.txt", 4294967297ULL, 9876543210123LL);
+    first.m_absoluteFilePath = "/data/first.txt";
+    second.m_absoluteFilePath = "/data/second.txt";
 
     const server::DataManager manager;
 
     ExpectInfo(manager.getOneByUrl(first.m_url), first);
-    ExpectInfo(manager.getOneByFilePath(second.m_filePath), second);
+    ExpectInfo(manager.getOneByFilePath(second.m_absoluteFilePath), second);
     ExpectInfos(manager.getAll(), {first, second});
 }
 
@@ -265,7 +269,7 @@ TEST_F(DataManagerTests, ConstructorSupportsUtf8MetadataFilePath)
 
 TEST_F(DataManagerTests, ConstructionAndDestructionDoNotRewriteMetadata)
 {
-    const std::string body = R"([ { "mtime": -1234567890123, "file_size": 17, "storage_path": "./data/report.txt", "url": "/download/report.txt", "future_field": true } ])";
+    const std::string body = R"([ { "mtime": -1234567890123, "file_size": 17, "absolute_file_path": "/data/report.txt", "url": "/download/report.txt", "future_field": true } ])";
     utils::FileUtil(m_filePath).setContent(body);
     const auto timestamp = fs::file_time_type::clock::now() - std::chrono::hours(24);
     fs::last_write_time(m_filePath, timestamp);
@@ -273,7 +277,9 @@ TEST_F(DataManagerTests, ConstructionAndDestructionDoNotRewriteMetadata)
 
     {
         const server::DataManager manager;
-        ExpectInfos(manager.getAll(), {MakeInfo("report.txt")});
+        auto info = MakeInfo("report.txt");
+        info.m_absoluteFilePath = "/data/report.txt";
+        ExpectInfos(manager.getAll(), {info});
         EXPECT_EQ(utils::FileUtil(m_filePath).getContent(), body);
         EXPECT_EQ(fs::last_write_time(m_filePath), originalTime);
     }
@@ -345,7 +351,7 @@ TEST_F(DataManagerTests, ConstructorRejectsNonObjectRecords)
 
 TEST_F(DataManagerTests, ConstructorRejectsMissingFields)
 {
-    for (const char *field : {"mtime", "file_size", "storage_path", "url"})
+    for (const char *field : {"mtime", "file_size", "absolute_file_path", "url"})
     {
         SCOPED_TRACE(field);
         auto item = MakeRecord(MakeInfo("report.txt"));
@@ -360,7 +366,7 @@ TEST_F(DataManagerTests, ConstructorRejectsMissingFields)
 
 TEST_F(DataManagerTests, ConstructorRejectsInvalidFieldTypes)
 {
-    for (const char *field : {"mtime", "file_size", "storage_path", "url"})
+    for (const char *field : {"mtime", "file_size", "absolute_file_path", "url"})
     {
         SCOPED_TRACE(field);
         const bool numeric = std::string(field) == "mtime" || std::string(field) == "file_size";
@@ -515,6 +521,20 @@ TEST_F(DataManagerTests, LoadFromDiskReportsErrorsAndCanBeRetried)
     ExpectInfos(manager.getAll(), {info});
 }
 
+TEST_F(DataManagerTests, LoadFromDiskPreservesAbsolutePathsAfterWorkingDirectoryChanges)
+{
+    const auto info = MakeInfo("report.txt");
+    writeRecords({info});
+    fs::current_path(m_directory);
+
+    server::DataManager manager;
+    ExpectInfo(manager.getOneByUrl(info.m_url), info);
+    ExpectInfo(manager.getOneByFilePath(info.m_absoluteFilePath), info);
+
+    ASSERT_NO_THROW(manager.persistToDisk());
+    EXPECT_EQ(readMetadata()[0]["absolute_file_path"].asString(), info.m_absoluteFilePath.string());
+}
+
 TEST_F(DataManagerTests, LoadFromDiskRejectsUrlsAlreadyInMemory)
 {
     const auto info = MakeInfo("report.txt");
@@ -542,7 +562,7 @@ TEST_F(DataManagerTests, GetAllReturnsEveryRecordWithoutDependingOnOrder)
     for (const auto &info : infos)
     {
         ExpectInfo(manager.getOneByUrl(info.m_url), info);
-        ExpectInfo(manager.getOneByFilePath(info.m_filePath), info);
+        ExpectInfo(manager.getOneByFilePath(info.m_absoluteFilePath), info);
     }
 }
 
@@ -554,31 +574,40 @@ TEST_F(DataManagerTests, QueriesReturnIndependentCopies)
     const auto body = utils::FileUtil(m_filePath).getContent();
 
     auto byUrl = manager.getOneByUrl(info.m_url);
-    auto byPath = manager.getOneByFilePath(info.m_filePath);
+    auto byPath = manager.getOneByFilePath(info.m_absoluteFilePath);
     auto all = manager.getAll();
     byUrl.m_fileSize = 999;
-    byPath.m_filePath = "changed";
+    byPath.m_absoluteFilePath = "changed";
     ASSERT_EQ(all.size(), 1U);
     all.front().m_url = "/changed/";
     all.front().m_mtime = fs::file_time_type{};
     all.clear();
 
     ExpectInfo(manager.getOneByUrl(info.m_url), info);
-    ExpectInfo(manager.getOneByFilePath(info.m_filePath), info);
+    ExpectInfo(manager.getOneByFilePath(info.m_absoluteFilePath), info);
     ExpectInfos(manager.getAll(), {info});
     EXPECT_EQ(utils::FileUtil(m_filePath).getContent(), body);
 }
 
-TEST_F(DataManagerTests, GetOneByStoragePathComparesPathComponents)
+TEST_F(DataManagerTests, GetOneByFilePathComparesPathComponents)
 {
     auto info = MakeInfo("report.txt");
-    info.m_filePath = fs::path("./data") / "folder" / "report.txt";
+    info.m_absoluteFilePath = utils::executableDirectory() / "./data" / "folder" / "report.txt";
     writeRecords({info});
     const server::DataManager manager;
+    const auto body = utils::FileUtil(m_filePath).getContent();
 
-    ExpectInfo(manager.getOneByFilePath(fs::path("./data//folder///report.txt")), info);
-    EXPECT_THROW(manager.getOneByFilePath(fs::path("data/folder/report.txt")), std::out_of_range);
-    EXPECT_THROW(manager.getOneByFilePath(utils::executableDirectory() / info.m_filePath), std::out_of_range);
+    const std::vector<fs::path> paths = {
+        utils::executableDirectory() / "./data//folder///report.txt",
+        info.m_absoluteFilePath};
+    for (const auto &filePath : paths)
+    {
+        SCOPED_TRACE(filePath);
+        ExpectInfo(manager.getOneByFilePath(filePath), info);
+    }
+
+    ExpectInfo(manager.getOneByUrl(info.m_url), info);
+    EXPECT_EQ(utils::FileUtil(m_filePath).getContent(), body);
 }
 
 TEST_F(DataManagerTests, MissingQueriesDoNotInsertRecords)
@@ -593,7 +622,7 @@ TEST_F(DataManagerTests, MissingQueriesDoNotInsertRecords)
         SCOPED_TRACE(url);
         EXPECT_THROW(manager.getOneByUrl(url), std::out_of_range);
     }
-    for (const char *path : {"", "./data/missing.txt", "./data/REPORT.txt", "data/report.txt"})
+    for (const char *path : {"", "./data/missing.txt", "./data/REPORT.txt", "./other/report.txt", "./data/../other/report.txt"})
     {
         SCOPED_TRACE(path);
         EXPECT_THROW(manager.getOneByFilePath(path), std::out_of_range);
@@ -650,7 +679,7 @@ TEST_F(DataManagerTests, InsertUsesUrlAsUniqueKey)
 {
     const auto first = MakeInfo("first.txt");
     auto second = MakeInfo("second.txt");
-    second.m_filePath = first.m_filePath;
+    second.m_absoluteFilePath = first.m_absoluteFilePath;
     writeRecords({first});
     server::DataManager manager;
 
@@ -674,8 +703,8 @@ TEST_F(DataManagerTests, UpdateReplacesRecordAndImmediatelyPersistsWholeTable)
     ASSERT_NO_THROW(manager.update(updated));
 
     ExpectInfo(manager.getOneByUrl(original.m_url), updated);
-    ExpectInfo(manager.getOneByFilePath(updated.m_filePath), updated);
-    EXPECT_THROW(manager.getOneByFilePath(original.m_filePath), std::out_of_range);
+    ExpectInfo(manager.getOneByFilePath(updated.m_absoluteFilePath), updated);
+    EXPECT_THROW(manager.getOneByFilePath(original.m_absoluteFilePath), std::out_of_range);
     ExpectInfos(manager.getAll(), {updated, other});
     const server::DataManager restored;
     ExpectInfos(restored.getAll(), {updated, other});
@@ -734,22 +763,23 @@ TEST_F(DataManagerTests, PersistToDiskWritesExactSchemaAndValues)
     ASSERT_EQ(item.size(), 4U);
     ASSERT_TRUE(item["mtime"].isInt64());
     ASSERT_TRUE(item["file_size"].isUInt64());
-    ASSERT_TRUE(item["storage_path"].isString());
+    ASSERT_TRUE(item["absolute_file_path"].isString());
     ASSERT_TRUE(item["url"].isString());
     EXPECT_EQ(item["mtime"].asInt64(), -1234567890123LL);
     EXPECT_EQ(item["file_size"].asUInt64(), 4294967297ULL);
-    EXPECT_EQ(item["storage_path"].asString(), "./data/report.txt");
+    EXPECT_EQ(item["absolute_file_path"].asString(), info.m_absoluteFilePath.string());
+    EXPECT_TRUE(fs::path(item["absolute_file_path"].asString()).is_absolute());
     EXPECT_EQ(item["url"].asString(), "/download/report.txt");
 }
 
 TEST_F(DataManagerTests, PersistToDiskReplacesLongerContentsWithoutTrailingBytes)
 {
     auto info = MakeInfo("report.txt");
-    info.m_filePath = std::string(8192, 'x');
+    info.m_absoluteFilePath = utils::executableDirectory() / std::string(8192, 'x');
     writeRecords({info});
     const auto originalSize = fs::file_size(m_filePath);
     server::DataManager manager;
-    info.m_filePath = "a";
+    info.m_absoluteFilePath = utils::executableDirectory() / "a";
 
     ASSERT_NO_THROW(manager.update(info));
 
@@ -780,8 +810,8 @@ TEST_F(DataManagerTests, MetadataRoundTripPreservesUnicodeAndEscapedStrings)
 {
     auto info = MakeInfo(u8"报告 \"一\"+\\换行\n.txt");
     const auto filePath = m_directory.string() + u8"/不存在的 文件 \"一\"+\\换行\n.txt";
-    info.m_filePath = filePath;
-    ASSERT_FALSE(fs::exists(info.m_filePath));
+    info.m_absoluteFilePath = filePath;
+    ASSERT_FALSE(fs::exists(info.m_absoluteFilePath));
     server::DataManager manager;
 
     ASSERT_NO_THROW(manager.insert(info));
@@ -789,12 +819,12 @@ TEST_F(DataManagerTests, MetadataRoundTripPreservesUnicodeAndEscapedStrings)
     const auto root = readMetadata();
     ASSERT_TRUE(root.isArray());
     ASSERT_EQ(root.size(), 1U);
-    EXPECT_EQ(root[0]["storage_path"].asString(), filePath);
+    EXPECT_EQ(root[0]["absolute_file_path"].asString(), filePath);
 
     const server::DataManager restored;
     ExpectInfo(restored.getOneByUrl(info.m_url), info);
-    ExpectInfo(restored.getOneByFilePath(info.m_filePath), info);
-    EXPECT_FALSE(fs::exists(info.m_filePath));
+    ExpectInfo(restored.getOneByFilePath(info.m_absoluteFilePath), info);
+    EXPECT_FALSE(fs::exists(info.m_absoluteFilePath));
 }
 
 TEST_F(DataManagerTests, PersistToDiskRecreatesRemovedMetadataFile)
@@ -926,14 +956,14 @@ TEST_F(DataManagerTests, ConcurrentQueriesObserveConsistentRecordsDuringUpdates)
             for (int attempt = 0; attempt < 200; ++attempt)
             {
                 const auto byUrl = manager.getOneByUrl(initial.m_url);
-                const auto byPath = manager.getOneByFilePath(initial.m_filePath);
+                const auto byPath = manager.getOneByFilePath(initial.m_absoluteFilePath);
                 const auto all = manager.getAll();
                 if (all.size() != 1) return false;
 
                 // 各次查询可能处于不同版本；每份副本内部的字段必须来自同一个版本。
                 for (const auto &info : {byUrl, byPath, all.front()})
                 {
-                    if (info.m_url != initial.m_url || info.m_filePath != initial.m_filePath ||
+                    if (info.m_url != initial.m_url || info.m_absoluteFilePath != initial.m_absoluteFilePath ||
                         info.m_fileSize > 20 || info.m_mtime.time_since_epoch().count() != 1000 + static_cast<Json::Int64>(info.m_fileSize)) return false;
                 }
             }

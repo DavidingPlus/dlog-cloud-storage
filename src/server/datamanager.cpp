@@ -22,7 +22,7 @@ FileMetadata FileMetadata::FromFile(const std::filesystem::path &filePath)
     FileMetadata info;
     info.m_mtime = file.lastModifyTime();
     info.m_fileSize = file.fileSize();
-    info.m_filePath = filePath;
+    info.m_absoluteFilePath = absoluteFilePath;
     info.m_url = Config::GetInstance().getDownloadPrefix() + file.fileName().string();
 
 
@@ -42,14 +42,14 @@ void DataManager::loadFromDisk()
     // 将反序列化得到的 Json::Value 中的数据添加到 m_table 中。
     for (auto &item : root)
     {
-        if (!item.isObject() || !item["mtime"].isInt64() || !item["file_size"].isUInt64() || !item["storage_path"].isString() || !item["url"].isString()) throw std::invalid_argument("DataManager::loadFromDisk(): invalid storage info");
+        if (!item.isObject() || !item["mtime"].isInt64() || !item["file_size"].isUInt64() || !item["absolute_file_path"].isString() || !item["url"].isString()) throw std::invalid_argument("DataManager::loadFromDisk(): invalid storage info");
 
         FileMetadata info;
 
         // 与 persistToDisk() 对应，按文件系统时钟的原始计数还原时间。
         info.m_mtime = std::filesystem::file_time_type(std::filesystem::file_time_type::duration(item["mtime"].asInt64()));
         info.m_fileSize = static_cast<size_t>(item["file_size"].asUInt64());
-        info.m_filePath = item["storage_path"].asString();
+        info.m_absoluteFilePath = item["absolute_file_path"].asString();
         info.m_url = item["url"].asString();
 
         insertWithoutPersist(info);
@@ -68,7 +68,7 @@ void DataManager::persistToDisk()
         // 保存文件系统时钟的原始计数，加载时使用相同的 duration 类型还原。
         item["mtime"] = static_cast<Json::Int64>(info.m_mtime.time_since_epoch().count());
         item["file_size"] = static_cast<Json::UInt64>(info.m_fileSize);
-        item["storage_path"] = info.m_filePath.string();
+        item["absolute_file_path"] = info.m_absoluteFilePath.string();
         item["url"] = info.m_url;
 
         root.append(item);
@@ -115,7 +115,7 @@ FileMetadata DataManager::getOneByFilePath(const std::filesystem::path &filePath
 
     for (auto &entry : m_table)
     {
-        if (filePath == entry.second.m_filePath) return entry.second;
+        if (filePath == entry.second.m_absoluteFilePath) return entry.second;
     }
 
     throw std::out_of_range("DataManager::getOneByFilePath(): file path not found: " + filePath.string());
