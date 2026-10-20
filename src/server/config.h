@@ -20,8 +20,8 @@ public:
     // 获取单例，首次访问时构造并读取配置；构造失败时异常向调用方传播。
     static Config &GetInstance();
 
-    // 从 config/Storage.conf 读取配置，仅在启动阶段调用。
-    bool ReadConfig();
+    // 从 config/server.conf 读取配置，仅在启动阶段调用。
+    bool readConfig();
 
     std::string getServerIp() const { return m_serverIp; }
 

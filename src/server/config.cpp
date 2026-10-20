@@ -8,13 +8,13 @@ DLOG_CLOUD_STORAGE_NAMESPACE_BEGIN(server)
 
 namespace
 {
-    constexpr const char *ConfigFile = "config/Storage.conf";
+    constexpr const char *kConfigFile = "config/server.conf";
 }
 
 
 Config::Config()
 {
-    if (!ReadConfig()) throw std::runtime_error("Config::Config(): ReadConfig() failed");
+    if (!readConfig()) throw std::runtime_error("Config::Config(): readConfig() failed");
 }
 
 Config &Config::GetInstance()
@@ -24,7 +24,7 @@ Config &Config::GetInstance()
     return instance;
 }
 
-bool Config::ReadConfig()
+bool Config::readConfig()
 {
 }
 
