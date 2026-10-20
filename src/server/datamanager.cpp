@@ -30,9 +30,9 @@ FileMetadata FileMetadata::FromFile(const std::filesystem::path &storagePath)
 
 void DataManager::loadFromDisk()
 {
-    // 构造函数中 m_filePath 已经被统一为绝对路径了，这里无需处理。下面 persistToDisk() 同理。
-    utils::FileUtil file(m_filePath);
-    if (!file.exists()) throw std::filesystem::filesystem_error("DataManager::loadFromDisk(): file does not exist", m_filePath, std::make_error_code(std::errc::no_such_file_or_directory));
+    // 构造函数中 m_metadataFilePath 已经被统一为绝对路径了，这里无需处理。下面 persistToDisk() 同理。
+    utils::FileUtil file(m_metadataFilePath);
+    if (!file.exists()) throw std::filesystem::filesystem_error("DataManager::loadFromDisk(): file does not exist", m_metadataFilePath, std::make_error_code(std::errc::no_such_file_or_directory));
 
     // 反序列化。
     auto root = utils::JsonUtil::UnSerialize(file.getContent());
@@ -74,7 +74,7 @@ void DataManager::persistToDisk()
     }
 
     auto body = utils::JsonUtil::Serialize(root);
-    utils::FileUtil(m_filePath).setContent(body);
+    utils::FileUtil(m_metadataFilePath).setContent(body);
 }
 
 void DataManager::insert(const FileMetadata &info)

@@ -46,7 +46,7 @@ class DataManager
 
 public:
 
-    DataManager() : m_filePath(utils::executableDirectory() / Config::GetInstance().getStorageInfoFile()) { loadFromDisk(); }
+    DataManager() : m_metadataFilePath(utils::executableDirectory() / Config::GetInstance().getStorageInfoFile()) { loadFromDisk(); }
 
     ~DataManager() = default;
 
@@ -74,12 +74,12 @@ public:
 
 private:
 
-    // 仅向内存表新增元数据，URL 重复时抛出 std::invalid_argument，供程序初始化运行时使用。
+    // 仅向内存表新增元数据，URL 重复时抛出 std::invalid_argument，供启动加载使用。
     void insertWithoutPersist(const FileMetadata &info);
 
 
     // 元数据持久化文件的绝对路径。
-    std::filesystem::path m_filePath;
+    std::filesystem::path m_metadataFilePath;
 
     // 元数据表的读写锁，允许 const 查询函数加锁。
     mutable std::shared_mutex m_rwlock;
