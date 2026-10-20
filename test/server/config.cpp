@@ -1,6 +1,10 @@
 #include <gtest/gtest.h>
 
+#include <chrono>
+#include <cstdlib>
 #include <filesystem>
+#include <fstream>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <system_error>
@@ -17,7 +21,8 @@ namespace
 {
     namespace fs = std::filesystem;
 
-    class ConfigTests : public ::testing::Test
+    // 只准备文件，不访问单例，供首次初始化测试复用。
+    class ConfigFileTests : public ::testing::Test
     {
 
     protected:
@@ -35,7 +40,7 @@ namespace
 
             fs::create_directories(m_configFile.parent_path());
             writeConfig(validConfig());
-            ASSERT_NO_THROW(server::Config::GetInstance().readConfig());
+            m_configPermissions = fs::status(m_configFile).permissions();
         }
 
         void TearDown() override
@@ -49,6 +54,18 @@ namespace
             if (m_configFile.empty())
             {
                 return;
+            }
+
+            // 权限错误、目录占位等用例即使提前结束，也能恢复测试配置。
+            if (fs::exists(m_configFile))
+            {
+                fs::permissions(m_configFile, m_configPermissions, error);
+                EXPECT_FALSE(error) << error.message();
+                if (fs::is_directory(m_configFile))
+                {
+                    fs::remove(m_configFile, error);
+                    EXPECT_FALSE(error) << error.message();
+                }
             }
 
             // 测试配置位于测试程序旁边，与服务端 bin/config 下的配置相互独立。
@@ -67,6 +84,12 @@ namespace
                 fs::remove(m_configFile.parent_path(), error);
                 EXPECT_FALSE(error) << error.message();
             }
+
+            if (!m_workingDirectory.empty())
+            {
+                fs::remove_all(m_workingDirectory, error);
+                EXPECT_FALSE(error) << error.message();
+            }
         }
 
         static Json::Value validConfig()
@@ -80,6 +103,40 @@ namespace
             root["storage_info"] = "./storage.data";
             root["bundle_format"] = bundle::LZIP;
             return root;
+        }
+
+        static Json::Value updatedConfig()
+        {
+            auto root = validConfig();
+            root["server_ip"] = "0.0.0.0";
+            root["server_port"] = 9090;
+            root["download_prefix"] = "/files/";
+            root["deep_storage_dir"] = "./data/compressed/";
+            root["low_storage_dir"] = "./data/normal/";
+            root["storage_info"] = "./data/metadata.json";
+            root["bundle_format"] = bundle::RAW;
+            return root;
+        }
+
+        // 当前目录放一份不同的配置，确认读取位置由可执行文件决定。
+        void prepareWorkingDirectory()
+        {
+            const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
+            for (int attempt = 0; attempt < 100; ++attempt)
+            {
+                const auto candidate = fs::temp_directory_path() / ("dlog-config-tests-" + std::to_string(stamp) + "-" + std::to_string(attempt));
+                std::error_code error;
+                if (fs::create_directory(candidate, error))
+                {
+                    m_workingDirectory = candidate;
+                    fs::create_directory(candidate / "config");
+                    utils::FileUtil(candidate / "config" / "server.conf").setContent(Json::writeString(Json::StreamWriterBuilder{}, updatedConfig()));
+                    fs::current_path(candidate);
+                    return;
+                }
+                ASSERT_FALSE(error) << error.message();
+            }
+            FAIL() << "Cannot create an isolated working directory";
         }
 
         void writeConfig(const Json::Value &root) const
@@ -101,12 +158,105 @@ namespace
 
         fs::path m_configFile;
         fs::path m_originalWorkingDirectory;
+        fs::path m_workingDirectory;
         std::string m_originalContent;
+        fs::perms m_configPermissions = fs::perms::unknown;
         bool m_hadDirectory = false;
         bool m_hadFile = false;
     };
+
+    class ConfigTests : public ConfigFileTests
+    {
+
+    protected:
+
+        void SetUp() override
+        {
+            ConfigFileTests::SetUp();
+            ASSERT_NO_THROW(server::Config::GetInstance().readConfig());
+        }
+    };
+
+    class ConfigInitializationDeathTest : public ConfigFileTests
+    {
+
+    protected:
+
+        void SetUp() override
+        {
+            ConfigFileTests::SetUp();
+            // 重新启动测试程序，避免继承其他测试已经构造好的单例。
+            GTEST_FLAG_SET(death_test_style, "threadsafe");
+        }
+    };
 }
 
+
+// 首次构造在新进程中执行；子进程的断言失败必须反映到退出码。
+
+TEST_F(ConfigInitializationDeathTest, FirstAccessLoadsAllFieldsBesideExecutable)
+{
+    ASSERT_EXIT(
+        {
+            writeConfig(updatedConfig());
+            fs::current_path(fs::temp_directory_path());
+            // 只调用 GetInstance()，确认构造函数完成加载。
+            expectConfig(updatedConfig());
+            std::_Exit(::testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+        },
+        ::testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
+TEST_F(ConfigInitializationDeathTest, RetriesInitializationAfterMissingFile)
+{
+    ASSERT_EXIT(
+        {
+            fs::remove(m_configFile);
+            EXPECT_THROW(server::Config::GetInstance(), fs::filesystem_error);
+
+            writeConfig(updatedConfig());
+            expectConfig(updatedConfig());
+            std::_Exit(::testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+        },
+        ::testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
+TEST_F(ConfigInitializationDeathTest, RetriesInitializationAfterMalformedJson)
+{
+    ASSERT_EXIT(
+        {
+            utils::FileUtil(m_configFile).setContent("{");
+            EXPECT_THROW(server::Config::GetInstance(), std::invalid_argument);
+
+            writeConfig(updatedConfig());
+            expectConfig(updatedConfig());
+            std::_Exit(::testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+        },
+        ::testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
+TEST_F(ConfigInitializationDeathTest, RetriesInitializationAfterRepeatedValidationFailures)
+{
+    ASSERT_EXIT(
+        {
+            for (const char *field : {"server_ip", "server_port", "download_prefix", "deep_storage_dir", "low_storage_dir", "storage_info", "bundle_format"})
+            {
+                SCOPED_TRACE(field);
+                auto root = updatedConfig();
+                root.removeMember(field);
+                writeConfig(root);
+                EXPECT_THROW(server::Config::GetInstance(), std::invalid_argument);
+            }
+
+            writeConfig(updatedConfig());
+            expectConfig(updatedConfig());
+            std::_Exit(::testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+        },
+        ::testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
+
+// 已加载配置的读取、校验和失败恢复。
 
 TEST_F(ConfigTests, LoadsAllSevenFields)
 {
@@ -115,7 +265,8 @@ TEST_F(ConfigTests, LoadsAllSevenFields)
 
 TEST_F(ConfigTests, FindsConfigurationBesideExecutableAfterWorkingDirectoryChanges)
 {
-    fs::current_path(fs::temp_directory_path());
+    prepareWorkingDirectory();
+    ASSERT_FALSE(::testing::Test::HasFatalFailure());
 
     ASSERT_NO_THROW(server::Config::GetInstance().readConfig());
     expectConfig(validConfig());
@@ -123,23 +274,30 @@ TEST_F(ConfigTests, FindsConfigurationBesideExecutableAfterWorkingDirectoryChang
 
 TEST_F(ConfigTests, ReloadUpdatesAllFields)
 {
-    auto root = validConfig();
-    root["server_ip"] = "0.0.0.0";
-    root["server_port"] = 9090;
-    root["download_prefix"] = "/files/";
-    root["deep_storage_dir"] = "./data/compressed/";
-    root["low_storage_dir"] = "./data/normal/";
-    root["storage_info"] = "./data/metadata.json";
-    root["bundle_format"] = bundle::RAW;
+    auto root = updatedConfig();
     writeConfig(root);
 
     ASSERT_NO_THROW(server::Config::GetInstance().readConfig());
     expectConfig(root);
 }
 
+TEST_F(ConfigTests, ReturnsTheSameInstanceWithoutImplicitReload)
+{
+    auto &first = server::Config::GetInstance();
+    writeConfig(updatedConfig());
+
+    auto &second = server::Config::GetInstance();
+    EXPECT_EQ(&first, &second);
+    expectConfig(validConfig());
+
+    ASSERT_NO_THROW(second.readConfig());
+    EXPECT_EQ(&first, &server::Config::GetInstance());
+    expectConfig(updatedConfig());
+}
+
 TEST_F(ConfigTests, RejectsMalformedOrNonObjectDocuments)
 {
-    for (const char *content : {"", "{", "[]", "null", "true", "42"})
+    for (const char *content : {"", " \t\r\n", "{", "{\"server_ip\":}", "[", "[]", "[1, 2]", "null", "true", "false", "42", "1.5", "\"config\"", "{}"})
     {
         SCOPED_TRACE(content);
         utils::FileUtil(m_configFile).setContent(content);
@@ -153,8 +311,7 @@ TEST_F(ConfigTests, RejectsMissingFieldsBeforeUpdatingMembers)
     for (const char *field : {"server_ip", "server_port", "download_prefix", "deep_storage_dir", "low_storage_dir", "storage_info", "bundle_format"})
     {
         SCOPED_TRACE(field);
-        auto root = validConfig();
-        root["server_ip"] = "0.0.0.0";
+        auto root = updatedConfig();
         root.removeMember(field);
         writeConfig(root);
 
@@ -168,9 +325,10 @@ TEST_F(ConfigTests, RejectsEmptyOrNonStringFields)
     for (const char *field : {"server_ip", "download_prefix", "deep_storage_dir", "low_storage_dir", "storage_info"})
     {
         SCOPED_TRACE(field);
-        for (const auto &value : {Json::Value(), Json::Value(""), Json::Value(42), Json::Value(false)})
+        for (const auto &value : {Json::Value(), Json::Value(""), Json::Value(42), Json::Value(1.5), Json::Value(false), Json::Value(true), Json::Value(Json::arrayValue), Json::Value(Json::objectValue)})
         {
-            auto root = validConfig();
+            SCOPED_TRACE(Json::writeString(Json::StreamWriterBuilder{}, value));
+            auto root = updatedConfig();
             root[field] = value;
             writeConfig(root);
 
@@ -180,20 +338,31 @@ TEST_F(ConfigTests, RejectsEmptyOrNonStringFields)
     }
 }
 
-TEST_F(ConfigTests, RejectsInvalidPortsAndCompressionFormats)
+TEST_F(ConfigTests, RejectsNonIntegerPortsAndCompressionFormats)
 {
-    const struct
+    for (const char *field : {"server_port", "bundle_format"})
     {
-        const char *field;
-        Json::Value value;
-    } cases[] = {
-        {"server_port", 0}, {"server_port", -1}, {"server_port", 65536}, {"server_port", "8081"}, {"server_port", true}, {"server_port", 1.5}, {"bundle_format", -1}, {"bundle_format", bundle::BZIP2 + 1}, {"bundle_format", "4"}, {"bundle_format", false}, {"bundle_format", 1.5}};
+        SCOPED_TRACE(field);
+        for (const auto &value : {Json::Value(), Json::Value(""), Json::Value("8081"), Json::Value(false), Json::Value(true), Json::Value(-0.5), Json::Value(0.5), Json::Value(1.5), Json::Value(Json::arrayValue), Json::Value(Json::objectValue)})
+        {
+            SCOPED_TRACE(Json::writeString(Json::StreamWriterBuilder{}, value));
+            auto root = updatedConfig();
+            root[field] = value;
+            writeConfig(root);
 
-    for (const auto &item : cases)
+            EXPECT_THROW(server::Config::GetInstance().readConfig(), std::invalid_argument);
+            expectConfig(validConfig());
+        }
+    }
+}
+
+TEST_F(ConfigTests, RejectsPortsOutsideTheAllowedRange)
+{
+    for (int port : {std::numeric_limits<int>::min(), -1, 0, 65536, std::numeric_limits<int>::max()})
     {
-        SCOPED_TRACE(item.field);
-        auto root = validConfig();
-        root[item.field] = item.value;
+        SCOPED_TRACE(port);
+        auto root = updatedConfig();
+        root["server_port"] = port;
         writeConfig(root);
 
         EXPECT_THROW(server::Config::GetInstance().readConfig(), std::invalid_argument);
@@ -201,12 +370,56 @@ TEST_F(ConfigTests, RejectsInvalidPortsAndCompressionFormats)
     }
 }
 
+TEST_F(ConfigTests, RejectsUnsupportedCompressionFormats)
+{
+    for (int format : {std::numeric_limits<int>::min(), -1, bundle::BZIP2 + 1, std::numeric_limits<int>::max()})
+    {
+        SCOPED_TRACE(format);
+        auto root = updatedConfig();
+        root["bundle_format"] = format;
+        writeConfig(root);
+
+        EXPECT_THROW(server::Config::GetInstance().readConfig(), std::invalid_argument);
+        expectConfig(validConfig());
+    }
+}
+
+TEST_F(ConfigTests, RejectsNumbersOutsideIntRangeWithoutTruncation)
+{
+    const Json::Value values[] = {
+        Json::Value(static_cast<Json::Int64>(std::numeric_limits<int>::min()) - 1),
+        Json::Value(static_cast<Json::Int64>(std::numeric_limits<int>::max()) + 1),
+        Json::Value(std::numeric_limits<Json::Int64>::min()),
+        Json::Value(std::numeric_limits<Json::Int64>::max()),
+        Json::Value(std::numeric_limits<Json::UInt>::max()),
+        Json::Value(std::numeric_limits<Json::UInt64>::max()),
+        Json::Value(-1e100),
+        Json::Value(1e100)};
+
+    for (const char *field : {"server_port", "bundle_format"})
+    {
+        SCOPED_TRACE(field);
+        for (const auto &value : values)
+        {
+            SCOPED_TRACE(Json::writeString(Json::StreamWriterBuilder{}, value));
+            auto root = updatedConfig();
+            root[field] = value;
+            writeConfig(root);
+
+            EXPECT_THROW(server::Config::GetInstance().readConfig(), std::invalid_argument);
+            expectConfig(validConfig());
+        }
+    }
+}
+
 TEST_F(ConfigTests, AcceptsPortBoundariesAndSupportedCompressionFormats)
 {
     for (int port : {1, 65535})
     {
-        for (int format : {bundle::RAW, bundle::LZIP, bundle::BZIP2})
+        SCOPED_TRACE(port);
+        for (int format = bundle::RAW; format <= bundle::BZIP2; ++format)
         {
+            SCOPED_TRACE(format);
             auto root = validConfig();
             root["server_port"] = port;
             root["bundle_format"] = format;
@@ -218,11 +431,24 @@ TEST_F(ConfigTests, AcceptsPortBoundariesAndSupportedCompressionFormats)
     }
 }
 
+TEST_F(ConfigTests, AcceptsIntegralRealNumbersAccordingToJsonCppSemantics)
+{
+    // isInt() 判断数值能否表示为 int，因此 8081.0 这样的整数值也合法。
+    auto root = updatedConfig();
+    root["server_port"] = 8081.0;
+    root["bundle_format"] = static_cast<double>(bundle::LZIP);
+    writeConfig(root);
+
+    ASSERT_NO_THROW(server::Config::GetInstance().readConfig());
+    expectConfig(root);
+}
+
 TEST_F(ConfigTests, RejectsDownloadPrefixesWithoutLeadingOrTrailingSlash)
 {
-    for (const char *prefix : {"download/", "/download", "download"})
+    for (const char *prefix : {"download/", "/download", "download", " /download/", "/download/ ", "\\", "\\download\\", "/download\\", "\\download/"})
     {
-        auto root = validConfig();
+        SCOPED_TRACE(prefix);
+        auto root = updatedConfig();
         root["download_prefix"] = prefix;
         writeConfig(root);
 
@@ -231,10 +457,129 @@ TEST_F(ConfigTests, RejectsDownloadPrefixesWithoutLeadingOrTrailingSlash)
     }
 }
 
+TEST_F(ConfigTests, AcceptsRootAndNestedDownloadPrefixes)
+{
+    for (const char *prefix : {"/", "/download/", "/api/files/", u8"/下载 目录/"})
+    {
+        SCOPED_TRACE(prefix);
+        auto root = updatedConfig();
+        root["download_prefix"] = prefix;
+        writeConfig(root);
+
+        ASSERT_NO_THROW(server::Config::GetInstance().readConfig());
+        expectConfig(root);
+    }
+}
+
+TEST_F(ConfigTests, PreservesUnicodeAndStoragePathsAsConfigured)
+{
+    auto root = updatedConfig();
+    root["server_ip"] = "::1";
+    root["download_prefix"] = u8"/云存储/";
+    root["deep_storage_dir"] = u8"/srv/cloud/深度 存储/";
+    root["low_storage_dir"] = u8"../普通 存储/";
+    root["storage_info"] = u8"./元数据/文件 \"信息\".json";
+    writeConfig(root);
+
+    ASSERT_NO_THROW(server::Config::GetInstance().readConfig());
+    expectConfig(root);
+}
+
+TEST_F(ConfigTests, IgnoresUnknownFields)
+{
+    auto root = updatedConfig();
+    root["future_option"]["enabled"] = true;
+    root["comment"] = "additional metadata";
+    writeConfig(root);
+
+    ASSERT_NO_THROW(server::Config::GetInstance().readConfig());
+    expectConfig(root);
+}
+
 TEST_F(ConfigTests, MissingFileReportsTheFileErrorAndKeepsLoadedConfiguration)
 {
     fs::remove(m_configFile);
 
     EXPECT_THROW(server::Config::GetInstance().readConfig(), fs::filesystem_error);
     expectConfig(validConfig());
+}
+
+TEST_F(ConfigTests, DoesNotFallBackToConfigurationInWorkingDirectory)
+{
+    prepareWorkingDirectory();
+    ASSERT_FALSE(::testing::Test::HasFatalFailure());
+    fs::remove(m_configFile);
+
+    EXPECT_THROW(server::Config::GetInstance().readConfig(), fs::filesystem_error);
+    expectConfig(validConfig());
+}
+
+TEST_F(ConfigTests, DirectoryAtConfigFilePathReportsTheFileError)
+{
+    fs::remove(m_configFile);
+    fs::create_directory(m_configFile);
+
+    EXPECT_THROW(server::Config::GetInstance().readConfig(), fs::filesystem_error);
+    expectConfig(validConfig());
+}
+
+TEST_F(ConfigTests, UnreadableFileReportsTheStreamError)
+{
+    fs::permissions(m_configFile, fs::perms::none);
+    std::ifstream probe(m_configFile, std::ios::binary);
+    if (probe.is_open())
+    {
+        GTEST_SKIP() << "The current user can read files without read permission";
+    }
+
+    EXPECT_THROW(server::Config::GetInstance().readConfig(), std::ios_base::failure);
+    expectConfig(validConfig());
+}
+
+TEST_F(ConfigTests, CanReloadAfterTheMissingFileIsRestored)
+{
+    fs::remove(m_configFile);
+    EXPECT_THROW(server::Config::GetInstance().readConfig(), fs::filesystem_error);
+    expectConfig(validConfig());
+
+    writeConfig(updatedConfig());
+    ASSERT_NO_THROW(server::Config::GetInstance().readConfig());
+    expectConfig(updatedConfig());
+}
+
+TEST_F(ConfigTests, CanReloadAfterMalformedJsonIsFixed)
+{
+    utils::FileUtil(m_configFile).setContent("{");
+    EXPECT_THROW(server::Config::GetInstance().readConfig(), std::invalid_argument);
+    expectConfig(validConfig());
+
+    writeConfig(updatedConfig());
+    ASSERT_NO_THROW(server::Config::GetInstance().readConfig());
+    expectConfig(updatedConfig());
+}
+
+TEST_F(ConfigTests, CanReloadAfterValidationFailuresWithoutPartialUpdates)
+{
+    auto &config = server::Config::GetInstance();
+    for (const char *field : {"server_ip", "server_port", "download_prefix", "deep_storage_dir", "low_storage_dir", "storage_info", "bundle_format"})
+    {
+        SCOPED_TRACE(field);
+        auto invalid = updatedConfig();
+        invalid[field] = Json::Value();
+        writeConfig(invalid);
+        EXPECT_THROW(config.readConfig(), std::invalid_argument);
+        expectConfig(validConfig());
+    }
+
+    writeConfig(updatedConfig());
+    ASSERT_NO_THROW(config.readConfig());
+    EXPECT_EQ(&config, &server::Config::GetInstance());
+    expectConfig(updatedConfig());
+
+    // 已经加载过新配置后再次失败，应该保留新值而非恢复为默认值。
+    auto invalid = validConfig();
+    invalid["download_prefix"] = "/invalid";
+    writeConfig(invalid);
+    EXPECT_THROW(config.readConfig(), std::invalid_argument);
+    expectConfig(updatedConfig());
 }

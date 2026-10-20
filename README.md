@@ -15,7 +15,9 @@ xmake test
 
 `utils::executableFullPath()` 和 `utils::executableDirectory()` 返回 `std::filesystem::path`，分别表示当前进程可执行文件的绝对路径和所在目录，不受当前工作目录影响。支持 Windows 和 Linux，可通过 `utils::executableDirectory() / "config" / "server.conf"` 定位运行配置。
 
-Linux 服务端的 `Config::readConfig()` 从可执行文件目录下的 `config/server.conf` 读取配置，不受工作目录影响。赋值前检查根节点、必填字符串、端口范围、压缩格式和下载前缀，校验失败时抛出 `std::invalid_argument`；文件读取和 JSON 解析失败时沿用工具类异常。对应测试位于 `test/server/config.cpp`，可用 `xmake test tests/server` 执行，覆盖正常读取、重载、工作目录变化、字段校验及读取和解析失败。
+Linux 服务端的 `Config::readConfig()` 从可执行文件目录下的 `config/server.conf` 读取配置，不受工作目录影响。赋值前检查根节点、必填字符串、端口范围、压缩格式和下载前缀，校验失败时抛出 `std::invalid_argument`；文件读取和 JSON 解析失败时沿用工具类异常。对应测试位于 `test/server/config.cpp`，可用 `xmake test tests/server` 执行。
+
+Config 测试覆盖首次构造与单例复用、七个字段读取和重载、工作目录中存在另一份配置时的定位、文件缺失和目录占位、读取权限、JSON 错误、逐字段缺失及类型错误、32/64 位数值越界、端口边界、全部支持的压缩格式、下载前缀、Unicode 与路径原样保留、额外字段，以及各种失败后的旧值保留和恢复加载。首次构造及失败重试通过 GTest 的 `threadsafe` 进程测试执行，保证单例尚未初始化，且不依赖测试顺序。测试会恢复原配置、文件权限和工作目录，并清理临时文件；当前用户能绕过读取权限时跳过对应权限用例。数值类型沿用 JsonCpp 的 `isInt()` 语义，`8081.0` 等能表示为 `int` 的整数值也会被接受。
 
 第三方库测试位于 `test/third_party/`。JsonCpp 测试覆盖值与容器操作、解析和序列化、流接口、Unicode 与空字节、64 位数值边界及大批量元数据往返。错误输入测试显式使用严格模式，检查语法错误、重复键、多余内容、非标准扩展和嵌套深度限制。
 
