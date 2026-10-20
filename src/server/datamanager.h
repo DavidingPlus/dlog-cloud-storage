@@ -4,6 +4,7 @@
 #include "globalmacros.h"
 
 #include "server/config.h"
+#include "utils/common.h"
 
 #include <filesystem>
 #include <shared_mutex>
@@ -19,8 +20,8 @@ DLOG_CLOUD_STORAGE_NAMESPACE_BEGIN(server)
 struct StorageInfo
 {
 
-    // 根据传入的文件路径，生成该文件的元数据信息的结构体。
-    static StorageInfo fromFile(const std::string &storagePath);
+    // 根据传入的文件路径，生成该文件的元数据信息的结构体，相对路径以可执行文件所在目录为基准。
+    static StorageInfo fromFile(const std::filesystem::path &storagePath);
 
 
     // 文件最近一次修改的时间。
@@ -29,8 +30,8 @@ struct StorageInfo
     // 文件大小，单位为字节。
     size_t m_fileSize = 0;
 
-    // 文件存储路径。
-    std::string m_storagePath;
+    // 文件存储路径，相对路径以可执行文件所在目录为基准。
+    std::filesystem::path m_filePath;
 
     // 下载请求 URL 中的资源路径。
     std::string m_url;
@@ -45,7 +46,7 @@ class DataManager
 
 public:
 
-    DataManager() : m_storageFile(Config::GetInstance().getStorageInfoFile()) { loadFromDisk(); }
+    DataManager() : m_filePath(utils::executableDirectory() / std::filesystem::u8path(Config::GetInstance().getStorageInfoFile())) { loadFromDisk(); }
 
     ~DataManager() = default;
 
@@ -65,7 +66,7 @@ public:
     StorageInfo getOneByUrl(const std::string &url) const;
 
     // 根据文件存储路径获取元数据副本，未找到时抛出 std::out_of_range。
-    StorageInfo getOneByStoragePath(const std::string &storagePath) const;
+    StorageInfo getOneByStoragePath(const std::filesystem::path &storagePath) const;
 
     // 获取全部元数据的副本。
     std::vector<StorageInfo> getAll() const;
@@ -77,8 +78,8 @@ private:
     void insertWithoutPersist(const StorageInfo &info);
 
 
-    // 元数据持久化文件路径。
-    std::string m_storageFile;
+    // 元数据持久化文件的绝对路径。
+    std::filesystem::path m_filePath;
 
     // 元数据表的读写锁，允许 const 查询函数加锁。
     mutable std::shared_mutex m_rwlock;
