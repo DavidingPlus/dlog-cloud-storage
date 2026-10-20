@@ -260,11 +260,11 @@ xmake test -y tests/core
 
 计划采用的流程为：
 
-1. 启动时由 `initLoad()` 读取整个元数据文件，恢复 `m_table`。
+1. 启动时由 `loadFromDisk()` 读取整个元数据文件，恢复 `m_table`。
 2. 运行期间通过 `m_table` 查询和修改记录。
 3. 插入或更新后调用 `persistToDisk()`，把整张表序列化为 JSON，并覆盖保存元数据文件。
 
-接口约定：`insert(info)` 只新增记录，URL 已存在时抛出 `std::invalid_argument`；`update(info)` 只更新已有记录，URL 不存在时抛出 `std::out_of_range`。两者修改后都持久化，保存失败时传播异常。私有函数 `insertWithoutPersist(info)` 只向内存表新增记录，URL 重复时同样报错，供 `initLoad()` 加载历史元数据时调用。
+接口约定：`insert(info)` 只新增记录，URL 已存在时抛出 `std::invalid_argument`；`update(info)` 只更新已有记录，URL 不存在时抛出 `std::out_of_range`。两者修改后都持久化，保存失败时传播异常。私有函数 `insertWithoutPersist(info)` 只向内存表新增记录，URL 重复时同样报错，供 `loadFromDisk()` 加载历史元数据时调用。
 
 这套流程处理的是文件元数据，上传文件的实际内容仍通过各自的存储路径读写。它便于理解和实现，但内存占用随记录数量增长，每次修改也需要序列化和写入全部记录。后续结合元数据数量、修改频率、加载耗时、内存占用和保存耗时决定是否调整。
 

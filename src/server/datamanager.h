@@ -47,8 +47,8 @@ public:
 
     ~DataManager();
 
-    // 从持久化文件加载元数据。
-    bool initLoad();
+    // 从磁盘的持久化文件加载元数据到内存，文件不存在或加载失败时抛出异常。主要在程序初始化运行时使用。
+    void loadFromDisk();
 
     // 把当前内存中的整张元数据表保存到磁盘，失败时抛出异常。
     void persistToDisk();
@@ -71,7 +71,7 @@ public:
 
 private:
 
-    // 仅向内存表新增元数据，URL 重复时抛出 std::invalid_argument，供启动恢复使用。
+    // 仅向内存表新增元数据，URL 重复时抛出 std::invalid_argument，供程序初始化运行时使用。
     void insertWithoutPersist(const StorageInfo &info);
 
 

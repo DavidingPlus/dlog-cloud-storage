@@ -27,8 +27,6 @@ StorageInfo StorageInfo::fromFile(const std::string &storagePath)
     return info;
 }
 
-// TODO
-
 DataManager::DataManager()
 {
 }
@@ -37,8 +35,30 @@ DataManager::~DataManager()
 {
 }
 
-bool DataManager::initLoad()
+void DataManager::loadFromDisk()
 {
+    utils::FileUtil file(m_storageFile);
+    if (!file.exists()) throw std::filesystem::filesystem_error("DataManager::loadFromDisk(): file does not exist", m_storageFile, std::make_error_code(std::errc::no_such_file_or_directory));
+
+    // 反序列化。
+    auto root = utils::JsonUtil::UnSerialize(file.getContent());
+    if (!root.isArray()) throw std::invalid_argument("DataManager::loadFromDisk(): root must be an array");
+
+    // 将反序列化得到的 Json::Value 中的数据添加到 m_table 中。
+    for (auto &item : root)
+    {
+        if (!item.isObject() || !item["mtime"].isInt64() || !item["file_size"].isUInt64() || !item["storage_path"].isString() || !item["url"].isString()) throw std::invalid_argument("DataManager::loadFromDisk(): invalid storage info");
+
+        StorageInfo info;
+
+        // 与 persistToDisk() 对应，按文件系统时钟的原始计数还原时间。
+        info.m_mtime = std::filesystem::file_time_type(std::filesystem::file_time_type::duration(item["mtime"].asInt64()));
+        info.m_fileSize = static_cast<size_t>(item["file_size"].asUInt64());
+        info.m_storagePath = item["storage_path"].asString();
+        info.m_url = item["url"].asString();
+
+        insertWithoutPersist(info);
+    }
 }
 
 void DataManager::persistToDisk()
