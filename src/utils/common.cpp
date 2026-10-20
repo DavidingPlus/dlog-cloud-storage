@@ -1,10 +1,45 @@
 #include "utils/common.h"
 
 #include <stdexcept>
+#include <system_error>
+
+#ifdef DLOG_CLOUD_STORAGE_OS_WIN32
+#include <windows.h>
+#endif
 
 
 DLOG_CLOUD_STORAGE_NAMESPACE_BEGIN(utils)
 
+
+std::filesystem::path executableFullPath()
+{
+#ifdef DLOG_CLOUD_STORAGE_OS_WIN32
+
+    // 使用宽字符支持中文路径，固定缓冲区覆盖 Windows 的长路径长度范围。
+    constexpr static DWORD kMaxPathLength = 32768;
+    wchar_t buffer[kMaxPathLength] = {};
+    const DWORD length = GetModuleFileNameW(nullptr, buffer, kMaxPathLength);
+    if (0 == length)
+    {
+        const DWORD error = GetLastError();
+        throw std::system_error(static_cast<int>(error), std::system_category(), "executableFullPath(): GetModuleFileNameW() failed");
+    }
+    if (kMaxPathLength == length) throw std::system_error(ERROR_INSUFFICIENT_BUFFER, std::system_category(), "executableFullPath(): executable path was truncated");
+
+
+    return std::filesystem::path(buffer, buffer + length);
+
+#elif defined DLOG_CLOUD_STORAGE_OS_LINUX
+
+    // /proc/self/exe 指向当前进程实际执行的文件，标准库负责读取完整的链接目标。
+    return std::filesystem::read_symlink("/proc/self/exe");
+
+#else
+
+    throw std::system_error(std::make_error_code(std::errc::function_not_supported), "executableFullPath(): unsupported platform");
+
+#endif
+}
 
 unsigned char toHex(unsigned char x)
 {

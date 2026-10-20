@@ -1,9 +1,76 @@
 #include <gtest/gtest.h>
 
+#include <filesystem>
 #include <stdexcept>
 #include <string>
+#include <system_error>
 
 #include "utils/common.h"
+
+
+namespace
+{
+    // 即使测试断言失败或抛出异常，也恢复工作目录，避免影响后续用例。
+    class ScopedWorkingDirectory
+    {
+
+    public:
+
+        explicit ScopedWorkingDirectory(const std::filesystem::path &directory)
+            : m_original(std::filesystem::current_path())
+        {
+            std::filesystem::current_path(directory);
+        }
+
+        ~ScopedWorkingDirectory()
+        {
+            std::error_code error;
+            std::filesystem::current_path(m_original, error);
+            EXPECT_FALSE(error) << error.message();
+        }
+
+        ScopedWorkingDirectory(const ScopedWorkingDirectory &) = delete;
+        ScopedWorkingDirectory &operator=(const ScopedWorkingDirectory &) = delete;
+
+    private:
+
+        std::filesystem::path m_original;
+    };
+}
+
+
+// 可执行文件路径与工作目录相互独立。
+
+TEST(CommonTests, ExecutableFullPathIsAnAbsoluteRegularFile)
+{
+    const auto executable = utils::executableFullPath();
+
+    EXPECT_TRUE(executable.is_absolute());
+    EXPECT_FALSE(executable.filename().empty());
+    EXPECT_TRUE(std::filesystem::is_regular_file(executable));
+}
+
+TEST(CommonTests, ExecutableDirectoryIsAnAbsoluteDirectory)
+{
+    const auto directory = utils::executableDirectory();
+
+    EXPECT_TRUE(directory.is_absolute());
+    EXPECT_TRUE(std::filesystem::is_directory(directory));
+}
+
+TEST(CommonTests, ExecutablePathsDoNotChangeWithTheWorkingDirectory)
+{
+    const auto executable = utils::executableFullPath();
+    const auto directory = utils::executableDirectory();
+    auto otherDirectory = executable.root_path();
+    if (std::filesystem::equivalent(directory, otherDirectory)) otherDirectory = std::filesystem::temp_directory_path();
+    if (std::filesystem::equivalent(directory, otherDirectory)) GTEST_SKIP() << "No different working directory is available";
+
+    const ScopedWorkingDirectory workingDirectory(otherDirectory);
+
+    EXPECT_EQ(utils::executableFullPath(), executable);
+    EXPECT_EQ(utils::executableDirectory(), directory);
+}
 
 
 // 十六进制与 URL 解码。

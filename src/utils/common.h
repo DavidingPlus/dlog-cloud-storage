@@ -4,10 +4,18 @@
 #include "globalmacros.h"
 
 #include <string>
+#include <filesystem>
 
 
 DLOG_CLOUD_STORAGE_NAMESPACE_BEGIN(utils)
 
+
+// 返回当前进程可执行文件的绝对路径，包含文件名，不受当前工作目录影响。获取失败时抛出 std::system_error（包括派生的 std::filesystem::filesystem_error）。
+std::filesystem::path executableFullPath();
+
+// 返回当前进程可执行文件所在目录的绝对路径。
+// 普通函数直接定义在头文件中时，需要显式 inline，允许多个编译单元包含相同定义，避免链接时重复定义。类体内定义的成员函数会隐式 inline；成员函数若在头文件中的类外定义，也需要显式 inline。此处 inline 用于满足定义规则，不保证编译器会展开函数调用；函数定义放在单个 .cpp 中时通常不需要 inline。
+inline std::filesystem::path executableDirectory() { return executableFullPath().parent_path(); }
 
 // 将数值 0~15 转换为一位大写十六进制字符。例如 toHex(9) == '9'、toHex(10) == 'A'、toHex(15) == 'F'。
 // 只转换一位，不会将整数 255 转换为字符串 "FF"；x 大于 15 时抛出 std::invalid_argument。
