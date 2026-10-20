@@ -12,16 +12,17 @@
 DLOG_CLOUD_STORAGE_NAMESPACE_BEGIN(server)
 
 
-FileMetadata FileMetadata::FromFile(const std::filesystem::path &storagePath)
+FileMetadata FileMetadata::FromFile(const std::filesystem::path &filePath)
 {
-    auto filePath = utils::executableDirectory() / storagePath;
-    utils::FileUtil file(filePath);
-    if (!file.exists()) throw std::filesystem::filesystem_error("FileMetadata::FromFile(): file does not exist", filePath, std::make_error_code(std::errc::no_such_file_or_directory));
+    // XXX path 的 / 运算符规则：右侧为绝对路径时，直接使用右侧绝对路径；右侧为相对路径时，拼接到左侧的可执行文件目录形成新绝对路径。
+    auto absoluteFilePath = utils::executableDirectory() / filePath;
+    utils::FileUtil file(absoluteFilePath);
+    if (!file.exists()) throw std::filesystem::filesystem_error("FileMetadata::FromFile(): file does not exist", absoluteFilePath, std::make_error_code(std::errc::no_such_file_or_directory));
 
     FileMetadata info;
     info.m_mtime = file.lastModifyTime();
     info.m_fileSize = file.fileSize();
-    info.m_filePath = storagePath;
+    info.m_filePath = filePath;
     info.m_url = Config::GetInstance().getDownloadPrefix() + file.fileName().string();
 
 
@@ -108,16 +109,16 @@ FileMetadata DataManager::getOneByUrl(const std::string &url) const
     return it->second;
 }
 
-FileMetadata DataManager::getOneByStoragePath(const std::filesystem::path &storagePath) const
+FileMetadata DataManager::getOneByFilePath(const std::filesystem::path &filePath) const
 {
     std::shared_lock lock(m_rwlock);
 
     for (auto &entry : m_table)
     {
-        if (storagePath == entry.second.m_filePath) return entry.second;
+        if (filePath == entry.second.m_filePath) return entry.second;
     }
 
-    throw std::out_of_range("DataManager::getOneByStoragePath(): storage path not found: " + storagePath.string());
+    throw std::out_of_range("DataManager::getOneByFilePath(): file path not found: " + filePath.string());
 }
 
 std::vector<FileMetadata> DataManager::getAll() const

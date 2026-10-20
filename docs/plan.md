@@ -79,7 +79,7 @@ flowchart LR
 | --- | --- |
 | `filename` | 经校验的原始文件名，作为第一版的查询键 |
 | `storageType` | `normal`；压缩阶段再增加 `compressed` |
-| `storagePath` | 服务端生成的、相对于数据根目录的存储路径 |
+| `filePath` | 服务端生成的、相对于数据根目录的存储路径 |
 | `originalSize` | 原文件字节数，使用 64 位无符号整数 |
 
 下载 URL 根据文件名生成，不必重复持久化。访问时间、修改时间等字段可以在有实际用途时增加。

@@ -438,7 +438,7 @@ TEST_F(ConfigTests, AcceptsRootAndNestedDownloadPrefixes)
     }
 }
 
-TEST_F(ConfigTests, PreservesUnicodeAndStoragePathsAsConfigured)
+TEST_F(ConfigTests, PreservesUnicodeAndFilePathsAsConfigured)
 {
     auto root = updatedConfig();
     root["server_ip"] = "::1";

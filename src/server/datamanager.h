@@ -21,7 +21,7 @@ struct FileMetadata
 {
 
     // 根据传入的文件路径，生成该文件的元数据信息的结构体，相对路径以可执行文件所在目录为基准。
-    static FileMetadata FromFile(const std::filesystem::path &storagePath);
+    static FileMetadata FromFile(const std::filesystem::path &filePath);
 
 
     // 文件最近一次修改的时间。
@@ -65,8 +65,8 @@ public:
     // 根据下载 URL 获取元数据副本，未找到时抛出 std::out_of_range。
     FileMetadata getOneByUrl(const std::string &url) const;
 
-    // 根据文件存储路径获取元数据副本，未找到时抛出 std::out_of_range。
-    FileMetadata getOneByStoragePath(const std::filesystem::path &storagePath) const;
+    // 根据文件路径获取元数据副本，未找到时抛出 std::out_of_range。
+    FileMetadata getOneByFilePath(const std::filesystem::path &filePath) const;
 
     // 获取全部元数据的副本。
     std::vector<FileMetadata> getAll() const;

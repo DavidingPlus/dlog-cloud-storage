@@ -191,14 +191,14 @@ TEST_F(DataManagerTests, FileMetadataUsesExecutableDirectoryAfterWorkingDirector
     utils::FileUtil(decoy).setContent("different content in the working directory");
     fs::current_path(workingDirectory);
 
-    for (const auto &storagePath : {relativeFile, file})
+    for (const auto &filePath : {relativeFile, file})
     {
-        SCOPED_TRACE(storagePath);
-        const auto info = server::FileMetadata::FromFile(storagePath);
+        SCOPED_TRACE(filePath);
+        const auto info = server::FileMetadata::FromFile(filePath);
 
         EXPECT_EQ(info.m_mtime, fs::last_write_time(file));
         EXPECT_EQ(info.m_fileSize, 5U);
-        EXPECT_EQ(info.m_filePath, storagePath);
+        EXPECT_EQ(info.m_filePath, filePath);
         EXPECT_EQ(info.m_url, server::Config::GetInstance().getDownloadPrefix() + u8"报告 一.txt");
     }
 }
@@ -232,7 +232,7 @@ TEST_F(DataManagerTests, ConstructorLoadsAllFieldsFromConfiguredFile)
     const server::DataManager manager;
 
     ExpectInfo(manager.getOneByUrl(first.m_url), first);
-    ExpectInfo(manager.getOneByStoragePath(second.m_filePath), second);
+    ExpectInfo(manager.getOneByFilePath(second.m_filePath), second);
     ExpectInfos(manager.getAll(), {first, second});
 }
 
@@ -242,7 +242,7 @@ TEST_F(DataManagerTests, ConstructorAcceptsEmptyArray)
 
     EXPECT_TRUE(manager.getAll().empty());
     EXPECT_THROW(manager.getOneByUrl("/download/missing.txt"), std::out_of_range);
-    EXPECT_THROW(manager.getOneByStoragePath("./data/missing.txt"), std::out_of_range);
+    EXPECT_THROW(manager.getOneByFilePath("./data/missing.txt"), std::out_of_range);
     EXPECT_TRUE(manager.getAll().empty());
 }
 
@@ -542,7 +542,7 @@ TEST_F(DataManagerTests, GetAllReturnsEveryRecordWithoutDependingOnOrder)
     for (const auto &info : infos)
     {
         ExpectInfo(manager.getOneByUrl(info.m_url), info);
-        ExpectInfo(manager.getOneByStoragePath(info.m_filePath), info);
+        ExpectInfo(manager.getOneByFilePath(info.m_filePath), info);
     }
 }
 
@@ -554,7 +554,7 @@ TEST_F(DataManagerTests, QueriesReturnIndependentCopies)
     const auto body = utils::FileUtil(m_filePath).getContent();
 
     auto byUrl = manager.getOneByUrl(info.m_url);
-    auto byPath = manager.getOneByStoragePath(info.m_filePath);
+    auto byPath = manager.getOneByFilePath(info.m_filePath);
     auto all = manager.getAll();
     byUrl.m_fileSize = 999;
     byPath.m_filePath = "changed";
@@ -564,7 +564,7 @@ TEST_F(DataManagerTests, QueriesReturnIndependentCopies)
     all.clear();
 
     ExpectInfo(manager.getOneByUrl(info.m_url), info);
-    ExpectInfo(manager.getOneByStoragePath(info.m_filePath), info);
+    ExpectInfo(manager.getOneByFilePath(info.m_filePath), info);
     ExpectInfos(manager.getAll(), {info});
     EXPECT_EQ(utils::FileUtil(m_filePath).getContent(), body);
 }
@@ -576,9 +576,9 @@ TEST_F(DataManagerTests, GetOneByStoragePathComparesPathComponents)
     writeRecords({info});
     const server::DataManager manager;
 
-    ExpectInfo(manager.getOneByStoragePath(fs::path("./data//folder///report.txt")), info);
-    EXPECT_THROW(manager.getOneByStoragePath(fs::path("data/folder/report.txt")), std::out_of_range);
-    EXPECT_THROW(manager.getOneByStoragePath(utils::executableDirectory() / info.m_filePath), std::out_of_range);
+    ExpectInfo(manager.getOneByFilePath(fs::path("./data//folder///report.txt")), info);
+    EXPECT_THROW(manager.getOneByFilePath(fs::path("data/folder/report.txt")), std::out_of_range);
+    EXPECT_THROW(manager.getOneByFilePath(utils::executableDirectory() / info.m_filePath), std::out_of_range);
 }
 
 TEST_F(DataManagerTests, MissingQueriesDoNotInsertRecords)
@@ -596,7 +596,7 @@ TEST_F(DataManagerTests, MissingQueriesDoNotInsertRecords)
     for (const char *path : {"", "./data/missing.txt", "./data/REPORT.txt", "data/report.txt"})
     {
         SCOPED_TRACE(path);
-        EXPECT_THROW(manager.getOneByStoragePath(path), std::out_of_range);
+        EXPECT_THROW(manager.getOneByFilePath(path), std::out_of_range);
     }
 
     ExpectInfos(manager.getAll(), {info});
@@ -674,8 +674,8 @@ TEST_F(DataManagerTests, UpdateReplacesRecordAndImmediatelyPersistsWholeTable)
     ASSERT_NO_THROW(manager.update(updated));
 
     ExpectInfo(manager.getOneByUrl(original.m_url), updated);
-    ExpectInfo(manager.getOneByStoragePath(updated.m_filePath), updated);
-    EXPECT_THROW(manager.getOneByStoragePath(original.m_filePath), std::out_of_range);
+    ExpectInfo(manager.getOneByFilePath(updated.m_filePath), updated);
+    EXPECT_THROW(manager.getOneByFilePath(original.m_filePath), std::out_of_range);
     ExpectInfos(manager.getAll(), {updated, other});
     const server::DataManager restored;
     ExpectInfos(restored.getAll(), {updated, other});
@@ -779,8 +779,8 @@ TEST_F(DataManagerTests, MetadataRoundTripPreservesNumericLimits)
 TEST_F(DataManagerTests, MetadataRoundTripPreservesUnicodeAndEscapedStrings)
 {
     auto info = MakeInfo(u8"报告 \"一\"+\\换行\n.txt");
-    const auto storagePath = m_directory.string() + u8"/不存在的 文件 \"一\"+\\换行\n.txt";
-    info.m_filePath = storagePath;
+    const auto filePath = m_directory.string() + u8"/不存在的 文件 \"一\"+\\换行\n.txt";
+    info.m_filePath = filePath;
     ASSERT_FALSE(fs::exists(info.m_filePath));
     server::DataManager manager;
 
@@ -789,11 +789,11 @@ TEST_F(DataManagerTests, MetadataRoundTripPreservesUnicodeAndEscapedStrings)
     const auto root = readMetadata();
     ASSERT_TRUE(root.isArray());
     ASSERT_EQ(root.size(), 1U);
-    EXPECT_EQ(root[0]["storage_path"].asString(), storagePath);
+    EXPECT_EQ(root[0]["storage_path"].asString(), filePath);
 
     const server::DataManager restored;
     ExpectInfo(restored.getOneByUrl(info.m_url), info);
-    ExpectInfo(restored.getOneByStoragePath(info.m_filePath), info);
+    ExpectInfo(restored.getOneByFilePath(info.m_filePath), info);
     EXPECT_FALSE(fs::exists(info.m_filePath));
 }
 
@@ -810,7 +810,7 @@ TEST_F(DataManagerTests, PersistToDiskRecreatesRemovedMetadataFile)
     ExpectInfos(restored.getAll(), {info});
 }
 
-TEST_F(DataManagerTests, InstancesKeepTheirOwnConfiguredStoragePath)
+TEST_F(DataManagerTests, InstancesKeepTheirOwnConfiguredFilePath)
 {
     const auto info = MakeInfo("report.txt");
     writeRecords({info});
@@ -926,7 +926,7 @@ TEST_F(DataManagerTests, ConcurrentQueriesObserveConsistentRecordsDuringUpdates)
             for (int attempt = 0; attempt < 200; ++attempt)
             {
                 const auto byUrl = manager.getOneByUrl(initial.m_url);
-                const auto byPath = manager.getOneByStoragePath(initial.m_filePath);
+                const auto byPath = manager.getOneByFilePath(initial.m_filePath);
                 const auto all = manager.getAll();
                 if (all.size() != 1) return false;
 
