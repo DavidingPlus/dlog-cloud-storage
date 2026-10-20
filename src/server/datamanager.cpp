@@ -24,5 +24,43 @@ StorageInfo StorageInfo::fromFile(const std::string &storagePath)
     return info;
 }
 
+// TODO
+
+DataManager::DataManager()
+{
+}
+
+DataManager::~DataManager()
+{
+}
+
+bool DataManager::initLoad()
+{
+}
+
+bool DataManager::storage()
+{
+}
+
+bool DataManager::insert(const StorageInfo &)
+{
+}
+
+bool DataManager::update(const StorageInfo &)
+{
+}
+
+bool DataManager::getOneByUrl(const std::string &, StorageInfo *) const
+{
+}
+
+bool DataManager::getOneByStoragePath(const std::string &, StorageInfo *) const
+{
+}
+
+bool DataManager::getAll(std::vector<StorageInfo> *) const
+{
+}
+
 
 DLOG_CLOUD_STORAGE_NAMESPACE_END

@@ -4,7 +4,10 @@
 #include "globalmacros.h"
 
 #include <filesystem>
+#include <shared_mutex>
 #include <string>
+#include <unordered_map>
+#include <vector>
 
 
 DLOG_CLOUD_STORAGE_NAMESPACE_BEGIN(server)
@@ -29,6 +32,56 @@ struct StorageInfo
 
     // 下载请求 URL 中的资源路径。
     std::string m_url;
+};
+
+
+// 文件元数据的内存管理、持久化与启动恢复。
+class DataManager
+{
+
+    DLOG_CLOUD_STORAGE_CLASS_NONCOPYABLE(DataManager)
+
+public:
+
+    DataManager();
+
+    ~DataManager();
+
+    // 从持久化文件加载元数据。
+    bool initLoad();
+
+    // 将当前元数据表保存到持久化文件。
+    bool storage();
+
+    // 按 URL 插入元数据，相同 URL 覆盖原记录。
+    bool insert(const StorageInfo &info);
+
+    // 按 URL 更新元数据。
+    bool update(const StorageInfo &info);
+
+    // 根据下载 URL 查询元数据，未找到时返回 false。
+    bool getOneByUrl(const std::string &url, StorageInfo *info) const;
+
+    // 根据文件存储路径查询元数据，未找到时返回 false。
+    bool getOneByStoragePath(const std::string &storagePath, StorageInfo *info) const;
+
+    // 获取全部元数据的副本。
+    bool getAll(std::vector<StorageInfo> *infos) const;
+
+
+private:
+
+    // 元数据持久化文件路径。
+    std::string m_storageFile;
+
+    // 元数据表的读写锁，允许 const 查询函数加锁。
+    mutable std::shared_mutex m_rwlock;
+
+    // 以下载 URL 为键的元数据表。
+    std::unordered_map<std::string, StorageInfo> m_table;
+
+    // 加载历史记录时关闭自动持久化。
+    bool m_needPersist = false;
 };
 
 
