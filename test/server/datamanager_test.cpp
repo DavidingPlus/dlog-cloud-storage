@@ -79,7 +79,7 @@ namespace
         void configureStorageFile(const fs::path &storageFile) const
         {
             auto root = utils::JsonUtil::UnSerialize(m_originalConfig);
-            root["storage_info"] = storageFile.u8string();
+            root["storage_info"] = storageFile.string();
             utils::FileUtil(m_configFile).setContent(Json::writeString(Json::StreamWriterBuilder{}, root));
             server::Config::GetInstance().readConfig();
         }
@@ -106,7 +106,7 @@ namespace
             server::StorageInfo info;
             info.m_mtime = fs::file_time_type(fs::file_time_type::duration(mtime));
             info.m_fileSize = fileSize;
-            info.m_filePath = fs::path("./data") / fs::u8path(name);
+            info.m_filePath = fs::path("./data") / name;
             info.m_url = "/download/" + name;
             return info;
         }
@@ -116,7 +116,7 @@ namespace
             Json::Value item;
             item["mtime"] = static_cast<Json::Int64>(info.m_mtime.time_since_epoch().count());
             item["file_size"] = static_cast<Json::UInt64>(info.m_fileSize);
-            item["storage_path"] = info.m_filePath.u8string();
+            item["storage_path"] = info.m_filePath.string();
             item["url"] = info.m_url;
             return item;
         }
@@ -165,7 +165,7 @@ TEST(StorageInfoTests, CreatesMetadataFromFile)
         EXPECT_EQ(info.m_mtime, fs::last_write_time(file));
         EXPECT_EQ(info.m_fileSize, 5U);
         EXPECT_EQ(info.m_filePath, file);
-        EXPECT_EQ(info.m_url, server::Config::GetInstance().getDownloadPrefix() + file.filename().u8string());
+        EXPECT_EQ(info.m_url, server::Config::GetInstance().getDownloadPrefix() + file.filename().string());
     });
 
     fs::remove(file);
@@ -181,7 +181,7 @@ TEST(StorageInfoTests, RejectsMissingFile)
 
 TEST_F(DataManagerTests, StorageInfoUsesExecutableDirectoryAfterWorkingDirectoryChanges)
 {
-    const auto file = m_directory / fs::u8path(u8"报告 一.txt");
+    const auto file = m_directory / u8"报告 一.txt";
     const auto relativeFile = m_directory.filename() / file.filename();
     utils::FileUtil(file).setContent("hello");
 
@@ -248,7 +248,7 @@ TEST_F(DataManagerTests, ConstructorAcceptsEmptyArray)
 
 TEST_F(DataManagerTests, ConstructorSupportsUtf8MetadataFilePath)
 {
-    const auto storageFile = m_directory / fs::u8path(u8"元数据 文件.json");
+    const auto storageFile = m_directory / u8"元数据 文件.json";
     fs::rename(m_filePath, storageFile);
     m_filePath = storageFile;
     configureStorageFile(storageFile);
@@ -779,8 +779,8 @@ TEST_F(DataManagerTests, MetadataRoundTripPreservesNumericLimits)
 TEST_F(DataManagerTests, MetadataRoundTripPreservesUnicodeAndEscapedStrings)
 {
     auto info = MakeInfo(u8"报告 \"一\"+\\换行\n.txt");
-    const auto storagePath = m_directory.u8string() + u8"/不存在的 文件 \"一\"+\\换行\n.txt";
-    info.m_filePath = fs::u8path(storagePath);
+    const auto storagePath = m_directory.string() + u8"/不存在的 文件 \"一\"+\\换行\n.txt";
+    info.m_filePath = storagePath;
     ASSERT_FALSE(fs::exists(info.m_filePath));
     server::DataManager manager;
 

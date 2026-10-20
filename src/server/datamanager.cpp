@@ -22,7 +22,7 @@ StorageInfo StorageInfo::fromFile(const std::filesystem::path &storagePath)
     info.m_mtime = file.lastModifyTime();
     info.m_fileSize = file.fileSize();
     info.m_filePath = storagePath;
-    info.m_url = Config::GetInstance().getDownloadPrefix() + file.fileName().u8string();
+    info.m_url = Config::GetInstance().getDownloadPrefix() + file.fileName().string();
 
 
     return info;
@@ -48,7 +48,7 @@ void DataManager::loadFromDisk()
         // 与 persistToDisk() 对应，按文件系统时钟的原始计数还原时间。
         info.m_mtime = std::filesystem::file_time_type(std::filesystem::file_time_type::duration(item["mtime"].asInt64()));
         info.m_fileSize = static_cast<size_t>(item["file_size"].asUInt64());
-        info.m_filePath = std::filesystem::u8path(item["storage_path"].asString());
+        info.m_filePath = item["storage_path"].asString();
         info.m_url = item["url"].asString();
 
         insertWithoutPersist(info);
@@ -67,7 +67,7 @@ void DataManager::persistToDisk()
         // 保存文件系统时钟的原始计数，加载时使用相同的 duration 类型还原。
         item["mtime"] = static_cast<Json::Int64>(info.m_mtime.time_since_epoch().count());
         item["file_size"] = static_cast<Json::UInt64>(info.m_fileSize);
-        item["storage_path"] = info.m_filePath.u8string();
+        item["storage_path"] = info.m_filePath.string();
         item["url"] = info.m_url;
 
         root.append(item);
@@ -117,7 +117,7 @@ StorageInfo DataManager::getOneByStoragePath(const std::filesystem::path &storag
         if (storagePath == entry.second.m_filePath) return entry.second;
     }
 
-    throw std::out_of_range("DataManager::getOneByStoragePath(): storage path not found: " + storagePath.u8string());
+    throw std::out_of_range("DataManager::getOneByStoragePath(): storage path not found: " + storagePath.string());
 }
 
 std::vector<StorageInfo> DataManager::getAll() const

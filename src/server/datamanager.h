@@ -46,7 +46,7 @@ class DataManager
 
 public:
 
-    DataManager() : m_filePath(utils::executableDirectory() / std::filesystem::u8path(Config::GetInstance().getStorageInfoFile())) { loadFromDisk(); }
+    DataManager() : m_filePath(utils::executableDirectory() / Config::GetInstance().getStorageInfoFile()) { loadFromDisk(); }
 
     ~DataManager() = default;
 
