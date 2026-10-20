@@ -118,6 +118,16 @@ if is_plat("linux") then
         add_files("src/server/**.cpp")
         set_targetdir("$(builddir)/$(plat)/$(arch)/$(mode)/bin/")
 
+        -- 配置阶段同步配置到可执行文件目录下；修改配置后重新执行 xmake config 即可更新。
+        on_config(function (target)
+            local configdir = path.join(target:targetdir(), "config")
+            os.mkdir(configdir)
+            os.cp(path.join(os.projectdir(), "config/server.conf"), path.join(configdir, "server.conf"))
+        end)
+
+        -- 安装及 XPack 打包时也保留可执行文件目录下的 config 子目录。
+        add_installfiles("config/server.conf", {prefixdir = "bin/config"})
+
         -- 关闭为项目内动态库依赖自动添加的 RPATH，不影响下面的手动设置。当前内部库为静态库，此项不是必需；保留以显式控制自动添加行为。
         set_policy("build.rpath", false)
 
@@ -128,7 +138,7 @@ if is_plat("linux") then
         add_rpathdirs("$ORIGIN/../lib", {runpath = false})
     target_end()
 
-    -- 只发布服务端程序及其运行依赖，内部静态库、测试和示例不单独打包。
+    -- 发布服务端程序、配置及其运行依赖，内部静态库、测试和示例不单独打包。
     xpack(project_name .. "-server")
         set_formats("targz")
         set_basename(project_name .. "-server-$(plat)-$(arch)-$(mode)-v$(version)")

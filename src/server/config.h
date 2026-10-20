@@ -20,7 +20,8 @@ public:
     // 获取单例，首次访问时构造并读取配置；构造失败时异常向调用方传播。
     static Config &GetInstance();
 
-    // 从 config/server.conf 读取配置，仅在启动阶段调用。
+    // 从可执行文件所在目录的 config/server.conf 读取配置，仅在启动阶段调用。
+    // XMake 流程会自动将项目根目录的 config/server.conf 拷贝到可执行文件的目录。
     bool readConfig();
 
     std::string getServerIp() const { return m_serverIp; }
