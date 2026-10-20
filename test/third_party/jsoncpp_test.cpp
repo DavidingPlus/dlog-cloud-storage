@@ -291,13 +291,15 @@ TEST_F(JsonCppTests, ParsesUtf8MemberNamesAndValues)
 
 TEST_F(JsonCppTests, DecodesUnicodeEscapesAndSurrogatePairs)
 {
-    ASSERT_TRUE(parse(R"({"text":"\u4e91\u5b58\u50a8\ud83d\udce6"})")) << m_errors;
+    const std::string document = R"({"text":"\u4e91\u5b58\u50a8\ud83d\udce6"})";
+    ASSERT_TRUE(parse(document)) << m_errors;
     EXPECT_EQ(m_root["text"].asString(), u8"云存储📦");
 }
 
 TEST_F(JsonCppTests, DecodesEscapedCharactersAndEmbeddedNuls)
 {
-    ASSERT_TRUE(parse(R"({"text":"\u0000\"\\\/\b\f\n\r\t"})")) << m_errors;
+    const std::string document = R"({"text":"\u0000\"\\\/\b\f\n\r\t"})";
+    ASSERT_TRUE(parse(document)) << m_errors;
     EXPECT_EQ(m_root["text"].asString(), std::string("\0\"\\/\b\f\n\r\t", 9));
 }
 

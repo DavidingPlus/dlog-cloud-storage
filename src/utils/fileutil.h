@@ -27,8 +27,8 @@ public:
     // 也可以用 const path &，虽然传参时不拷贝，但保存到 m_path 时仍需拷贝一份。
     explicit FileUtil(std::filesystem::path path) : m_path(std::move(path)) {}
 
-    // 获取普通文件的大小，单位为字节；空文件返回 0，查询失败时抛出 std::filesystem::filesystem_error。
-    uintmax_t fileSize() const { return std::filesystem::file_size(m_path); }
+    // 获取普通文件的大小，单位为字节；空文件返回 0，路径为目录或查询失败时抛出 std::filesystem::filesystem_error。
+    uintmax_t fileSize() const;
 
     // std::filesystem 不提供查询最近访问时间的接口，需要额外适配平台 API 和时间类型，很麻烦。暂不实现此接口。
     // std::filesystem::file_time_type lastAccessTime() const;

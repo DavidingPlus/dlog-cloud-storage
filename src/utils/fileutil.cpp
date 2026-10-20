@@ -3,12 +3,22 @@
 #include <fstream>
 #include <limits>
 #include <stdexcept>
+#include <system_error>
 
 #include <bundle.h>
 
 
 DLOG_CLOUD_STORAGE_NAMESPACE_BEGIN(utils)
 
+
+uintmax_t FileUtil::fileSize() const
+{
+    // Linux 下对目录调用 fileSize() 会自动抛异常，但是 windows 不会，因此显式判断统一语义。
+    if (std::filesystem::is_directory(m_path)) throw std::filesystem::filesystem_error("FileUtil::fileSize(): path is a directory", m_path, std::make_error_code(std::errc::is_a_directory));
+
+
+    return std::filesystem::file_size(m_path);
+}
 
 std::string FileUtil::getPosLen(uintmax_t pos, size_t len) const
 {
