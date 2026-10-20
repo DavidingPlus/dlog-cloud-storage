@@ -2,6 +2,7 @@
 
 #include "server/config.h"
 #include "utils/fileutil.h"
+#include "utils/jsonutil.h"
 
 #include <stdexcept>
 #include <system_error>
@@ -39,8 +40,26 @@ bool DataManager::initLoad()
 {
 }
 
-bool DataManager::storage()
+void DataManager::persistToDisk()
 {
+    auto infos = getAll();
+    Json::Value root(Json::arrayValue);
+
+    for (auto &info : infos)
+    {
+        Json::Value item;
+
+        // 保存文件系统时钟的原始计数，加载时使用相同的 duration 类型还原。
+        item["mtime"] = static_cast<Json::Int64>(info.m_mtime.time_since_epoch().count());
+        item["file_size"] = static_cast<Json::UInt64>(info.m_fileSize);
+        item["storage_path"] = info.m_storagePath;
+        item["url"] = info.m_url;
+
+        root.append(item);
+    }
+
+    auto body = utils::JsonUtil::Serialize(root);
+    utils::FileUtil(m_storageFile).setContent(body);
 }
 
 bool DataManager::insert(const StorageInfo &)

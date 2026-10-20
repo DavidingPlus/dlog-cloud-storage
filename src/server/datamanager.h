@@ -50,8 +50,8 @@ public:
     // 从持久化文件加载元数据。
     bool initLoad();
 
-    // 将当前元数据表保存到持久化文件。
-    bool storage();
+    // 把当前内存中的整张元数据表保存到磁盘，失败时抛出异常。
+    void persistToDisk();
 
     // 按 URL 插入元数据，相同 URL 覆盖原记录。
     bool insert(const StorageInfo &info);
