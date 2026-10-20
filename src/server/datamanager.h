@@ -53,11 +53,11 @@ public:
     // 把当前内存中的整张元数据表保存到磁盘，失败时抛出异常。
     void persistToDisk();
 
-    // 按 URL 插入元数据，相同 URL 覆盖原记录。
-    bool insert(const StorageInfo &info);
+    // 按 URL 新增元数据并持久化，URL 已存在时抛出 std::invalid_argument。
+    void insert(const StorageInfo &info);
 
-    // 按 URL 更新元数据。
-    bool update(const StorageInfo &info);
+    // 按 URL 更新已有元数据并持久化，URL 不存在时抛出 std::out_of_range。
+    void update(const StorageInfo &info);
 
     // 根据下载 URL 获取元数据副本，未找到时抛出 std::out_of_range。
     StorageInfo getOneByUrl(const std::string &url) const;
@@ -71,6 +71,10 @@ public:
 
 private:
 
+    // 仅向内存表新增元数据，URL 重复时抛出 std::invalid_argument，供启动恢复使用。
+    void insertWithoutPersist(const StorageInfo &info);
+
+
     // 元数据持久化文件路径。
     std::string m_storageFile;
 
@@ -79,9 +83,6 @@ private:
 
     // 以下载 URL 为键的元数据表。
     std::unordered_map<std::string, StorageInfo> m_table;
-
-    // 加载历史记录时关闭自动持久化。
-    bool m_needPersist = false;
 };
 
 

@@ -4,6 +4,7 @@
 #include "utils/fileutil.h"
 #include "utils/jsonutil.h"
 
+#include <mutex>
 #include <stdexcept>
 #include <system_error>
 
@@ -62,12 +63,24 @@ void DataManager::persistToDisk()
     utils::FileUtil(m_storageFile).setContent(body);
 }
 
-bool DataManager::insert(const StorageInfo &)
+void DataManager::insert(const StorageInfo &info)
 {
+    insertWithoutPersist(info);
+    persistToDisk();
 }
 
-bool DataManager::update(const StorageInfo &)
+void DataManager::update(const StorageInfo &info)
 {
+    {
+        std::unique_lock lock(m_rwlock);
+
+        auto it = m_table.find(info.m_url);
+        if (m_table.end() == it) throw std::out_of_range("DataManager::update(): URL not found: " + info.m_url);
+
+        it->second = info;
+    }
+
+    persistToDisk();
 }
 
 StorageInfo DataManager::getOneByUrl(const std::string &url) const
@@ -103,6 +116,15 @@ std::vector<StorageInfo> DataManager::getAll() const
 
 
     return infos;
+}
+
+void DataManager::insertWithoutPersist(const StorageInfo &info)
+{
+    std::unique_lock lock(m_rwlock);
+
+    if (m_table.end() != m_table.find(info.m_url)) throw std::invalid_argument("DataManager::insertWithoutPersist(): URL already exists: " + info.m_url);
+
+    m_table[info.m_url] = info;
 }
 
 
