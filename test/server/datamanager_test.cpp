@@ -89,7 +89,7 @@ namespace
             utils::FileUtil(m_filePath).setContent(Json::writeString(Json::StreamWriterBuilder{}, root));
         }
 
-        void writeRecords(const std::vector<server::StorageInfo> &infos) const
+        void writeRecords(const std::vector<server::FileMetadata> &infos) const
         {
             Json::Value root(Json::arrayValue);
             for (const auto &info : infos) root.append(MakeRecord(info));
@@ -101,9 +101,9 @@ namespace
             return utils::JsonUtil::UnSerialize(utils::FileUtil(m_filePath).getContent());
         }
 
-        static server::StorageInfo MakeInfo(const std::string &name, size_t fileSize = 17, Json::Int64 mtime = -1234567890123LL)
+        static server::FileMetadata MakeInfo(const std::string &name, size_t fileSize = 17, Json::Int64 mtime = -1234567890123LL)
         {
-            server::StorageInfo info;
+            server::FileMetadata info;
             info.m_mtime = fs::file_time_type(fs::file_time_type::duration(mtime));
             info.m_fileSize = fileSize;
             info.m_filePath = fs::path("./data") / name;
@@ -111,7 +111,7 @@ namespace
             return info;
         }
 
-        static Json::Value MakeRecord(const server::StorageInfo &info)
+        static Json::Value MakeRecord(const server::FileMetadata &info)
         {
             Json::Value item;
             item["mtime"] = static_cast<Json::Int64>(info.m_mtime.time_since_epoch().count());
@@ -121,7 +121,7 @@ namespace
             return item;
         }
 
-        static void ExpectInfo(const server::StorageInfo &actual, const server::StorageInfo &expected)
+        static void ExpectInfo(const server::FileMetadata &actual, const server::FileMetadata &expected)
         {
             EXPECT_EQ(actual.m_mtime, expected.m_mtime);
             EXPECT_EQ(actual.m_fileSize, expected.m_fileSize);
@@ -130,7 +130,7 @@ namespace
         }
 
         // unordered_map 不保证顺序，按 URL 对照记录，并比较全部字段。
-        static void ExpectInfos(const std::vector<server::StorageInfo> &actual, const std::vector<server::StorageInfo> &expected)
+        static void ExpectInfos(const std::vector<server::FileMetadata> &actual, const std::vector<server::FileMetadata> &expected)
         {
             ASSERT_EQ(actual.size(), expected.size());
             for (const auto &info : expected)
@@ -152,7 +152,7 @@ namespace
 }
 
 
-TEST(StorageInfoTests, CreatesMetadataFromFile)
+TEST(FileMetadataTests, CreatesMetadataFromFile)
 {
     const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
     const auto file = fs::temp_directory_path() / ("storage-info-" + std::to_string(stamp) + ".txt");
@@ -160,7 +160,7 @@ TEST(StorageInfoTests, CreatesMetadataFromFile)
     utils::FileUtil(file).setContent("hello");
 
     EXPECT_NO_THROW({
-        const auto info = server::StorageInfo::fromFile(file);
+        const auto info = server::FileMetadata::FromFile(file);
 
         EXPECT_EQ(info.m_mtime, fs::last_write_time(file));
         EXPECT_EQ(info.m_fileSize, 5U);
@@ -171,15 +171,15 @@ TEST(StorageInfoTests, CreatesMetadataFromFile)
     fs::remove(file);
 }
 
-TEST(StorageInfoTests, RejectsMissingFile)
+TEST(FileMetadataTests, RejectsMissingFile)
 {
     const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
     const auto file = fs::temp_directory_path() / ("storage-info-missing-" + std::to_string(stamp) + ".txt");
 
-    EXPECT_THROW(server::StorageInfo::fromFile(file), fs::filesystem_error);
+    EXPECT_THROW(server::FileMetadata::FromFile(file), fs::filesystem_error);
 }
 
-TEST_F(DataManagerTests, StorageInfoUsesExecutableDirectoryAfterWorkingDirectoryChanges)
+TEST_F(DataManagerTests, FileMetadataUsesExecutableDirectoryAfterWorkingDirectoryChanges)
 {
     const auto file = m_directory / u8"报告 一.txt";
     const auto relativeFile = m_directory.filename() / file.filename();
@@ -194,7 +194,7 @@ TEST_F(DataManagerTests, StorageInfoUsesExecutableDirectoryAfterWorkingDirectory
     for (const auto &storagePath : {relativeFile, file})
     {
         SCOPED_TRACE(storagePath);
-        const auto info = server::StorageInfo::fromFile(storagePath);
+        const auto info = server::FileMetadata::FromFile(storagePath);
 
         EXPECT_EQ(info.m_mtime, fs::last_write_time(file));
         EXPECT_EQ(info.m_fileSize, 5U);
@@ -203,7 +203,7 @@ TEST_F(DataManagerTests, StorageInfoUsesExecutableDirectoryAfterWorkingDirectory
     }
 }
 
-TEST_F(DataManagerTests, StorageInfoDoesNotFallBackToWorkingDirectory)
+TEST_F(DataManagerTests, FileMetadataDoesNotFallBackToWorkingDirectory)
 {
     const auto relativeFile = m_directory.filename() / "missing.txt";
     const auto workingDirectory = m_directory / "working";
@@ -213,7 +213,7 @@ TEST_F(DataManagerTests, StorageInfoDoesNotFallBackToWorkingDirectory)
     ASSERT_FALSE(fs::exists(utils::executableDirectory() / relativeFile));
     fs::current_path(workingDirectory);
 
-    EXPECT_THROW(server::StorageInfo::fromFile(relativeFile), fs::filesystem_error);
+    EXPECT_THROW(server::FileMetadata::FromFile(relativeFile), fs::filesystem_error);
 }
 
 
@@ -533,7 +533,7 @@ TEST_F(DataManagerTests, LoadFromDiskRejectsUrlsAlreadyInMemory)
 
 TEST_F(DataManagerTests, GetAllReturnsEveryRecordWithoutDependingOnOrder)
 {
-    const std::vector<server::StorageInfo> infos = {
+    const std::vector<server::FileMetadata> infos = {
         MakeInfo("third.txt", 0, 0), MakeInfo("first.txt", 31, -9876543210123LL), MakeInfo("second.txt", 72, 9876543210123LL)};
     writeRecords(infos);
     const server::DataManager manager;
@@ -762,7 +762,7 @@ TEST_F(DataManagerTests, PersistToDiskReplacesLongerContentsWithoutTrailingBytes
 TEST_F(DataManagerTests, MetadataRoundTripPreservesNumericLimits)
 {
     using Rep = fs::file_time_type::duration::rep;
-    const std::vector<server::StorageInfo> infos = {
+    const std::vector<server::FileMetadata> infos = {
         MakeInfo("oldest.txt", 0, std::numeric_limits<Rep>::min()),
         MakeInfo("newest.txt", std::numeric_limits<size_t>::max(), std::numeric_limits<Rep>::max()),
         MakeInfo("epoch.txt", 1, 0)};

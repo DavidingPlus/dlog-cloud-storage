@@ -12,13 +12,13 @@
 DLOG_CLOUD_STORAGE_NAMESPACE_BEGIN(server)
 
 
-StorageInfo StorageInfo::fromFile(const std::filesystem::path &storagePath)
+FileMetadata FileMetadata::FromFile(const std::filesystem::path &storagePath)
 {
     auto filePath = utils::executableDirectory() / storagePath;
     utils::FileUtil file(filePath);
-    if (!file.exists()) throw std::filesystem::filesystem_error("StorageInfo::fromFile(): file does not exist", filePath, std::make_error_code(std::errc::no_such_file_or_directory));
+    if (!file.exists()) throw std::filesystem::filesystem_error("FileMetadata::FromFile(): file does not exist", filePath, std::make_error_code(std::errc::no_such_file_or_directory));
 
-    StorageInfo info;
+    FileMetadata info;
     info.m_mtime = file.lastModifyTime();
     info.m_fileSize = file.fileSize();
     info.m_filePath = storagePath;
@@ -43,7 +43,7 @@ void DataManager::loadFromDisk()
     {
         if (!item.isObject() || !item["mtime"].isInt64() || !item["file_size"].isUInt64() || !item["storage_path"].isString() || !item["url"].isString()) throw std::invalid_argument("DataManager::loadFromDisk(): invalid storage info");
 
-        StorageInfo info;
+        FileMetadata info;
 
         // 与 persistToDisk() 对应，按文件系统时钟的原始计数还原时间。
         info.m_mtime = std::filesystem::file_time_type(std::filesystem::file_time_type::duration(item["mtime"].asInt64()));
@@ -77,13 +77,13 @@ void DataManager::persistToDisk()
     utils::FileUtil(m_filePath).setContent(body);
 }
 
-void DataManager::insert(const StorageInfo &info)
+void DataManager::insert(const FileMetadata &info)
 {
     insertWithoutPersist(info);
     persistToDisk();
 }
 
-void DataManager::update(const StorageInfo &info)
+void DataManager::update(const FileMetadata &info)
 {
     {
         std::unique_lock lock(m_rwlock);
@@ -97,7 +97,7 @@ void DataManager::update(const StorageInfo &info)
     persistToDisk();
 }
 
-StorageInfo DataManager::getOneByUrl(const std::string &url) const
+FileMetadata DataManager::getOneByUrl(const std::string &url) const
 {
     std::shared_lock lock(m_rwlock);
 
@@ -108,7 +108,7 @@ StorageInfo DataManager::getOneByUrl(const std::string &url) const
     return it->second;
 }
 
-StorageInfo DataManager::getOneByStoragePath(const std::filesystem::path &storagePath) const
+FileMetadata DataManager::getOneByStoragePath(const std::filesystem::path &storagePath) const
 {
     std::shared_lock lock(m_rwlock);
 
@@ -120,11 +120,11 @@ StorageInfo DataManager::getOneByStoragePath(const std::filesystem::path &storag
     throw std::out_of_range("DataManager::getOneByStoragePath(): storage path not found: " + storagePath.string());
 }
 
-std::vector<StorageInfo> DataManager::getAll() const
+std::vector<FileMetadata> DataManager::getAll() const
 {
     std::shared_lock lock(m_rwlock);
 
-    std::vector<StorageInfo> infos;
+    std::vector<FileMetadata> infos;
     infos.reserve(m_table.size());
     for (auto &entry : m_table) infos.push_back(entry.second);
 
@@ -132,7 +132,7 @@ std::vector<StorageInfo> DataManager::getAll() const
     return infos;
 }
 
-void DataManager::insertWithoutPersist(const StorageInfo &info)
+void DataManager::insertWithoutPersist(const FileMetadata &info)
 {
     std::unique_lock lock(m_rwlock);
 
