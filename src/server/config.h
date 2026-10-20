@@ -41,7 +41,7 @@ public:
 
 private:
 
-    Config();
+    Config() { readConfig(); }
 
 
     // 服务地址。

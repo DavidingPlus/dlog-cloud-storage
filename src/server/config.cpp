@@ -18,11 +18,6 @@ namespace
 }
 
 
-Config::Config()
-{
-    readConfig();
-}
-
 Config &Config::GetInstance()
 {
     // 详见：https://github.com/DavidingPlus/dfiber/tree/master/snippet/Singleton

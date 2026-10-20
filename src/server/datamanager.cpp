@@ -1,6 +1,5 @@
 #include "server/datamanager.h"
 
-#include "server/config.h"
 #include "utils/fileutil.h"
 #include "utils/jsonutil.h"
 
@@ -25,14 +24,6 @@ StorageInfo StorageInfo::fromFile(const std::string &storagePath)
 
 
     return info;
-}
-
-DataManager::DataManager()
-{
-}
-
-DataManager::~DataManager()
-{
 }
 
 void DataManager::loadFromDisk()

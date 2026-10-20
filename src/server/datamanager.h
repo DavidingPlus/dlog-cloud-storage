@@ -3,6 +3,8 @@
 
 #include "globalmacros.h"
 
+#include "server/config.h"
+
 #include <filesystem>
 #include <shared_mutex>
 #include <string>
@@ -43,9 +45,9 @@ class DataManager
 
 public:
 
-    DataManager();
+    DataManager() : m_storageFile(Config::GetInstance().getStorageInfoFile()) { loadFromDisk(); }
 
-    ~DataManager();
+    ~DataManager() = default;
 
     // 从磁盘的持久化文件加载元数据到内存，文件不存在或加载失败时抛出异常。主要在程序初始化运行时使用。
     void loadFromDisk();
