@@ -15,6 +15,8 @@ xmake test
 
 `utils::executableFullPath()` 和 `utils::executableDirectory()` 返回 `std::filesystem::path`，分别表示当前进程可执行文件的绝对路径和所在目录，不受当前工作目录影响。支持 Windows 和 Linux，可通过 `utils::executableDirectory() / "config" / "server.conf"` 定位运行配置。
 
+Linux 服务端的 `Config::readConfig()` 从可执行文件目录下的 `config/server.conf` 读取配置，不受工作目录影响。赋值前检查根节点、必填字符串、端口范围、压缩格式和下载前缀，校验失败时抛出 `std::invalid_argument`；文件读取和 JSON 解析失败时沿用工具类异常。对应测试位于 `test/server/config.cpp`，可用 `xmake test tests/server` 执行，覆盖正常读取、重载、工作目录变化、字段校验及读取和解析失败。
+
 第三方库测试位于 `test/third_party/`。JsonCpp 测试覆盖值与容器操作、解析和序列化、流接口、Unicode 与空字节、64 位数值边界及大批量元数据往返。错误输入测试显式使用严格模式，检查语法错误、重复键、多余内容、非标准扩展和嵌套深度限制。
 
 ## 服务端打包（Linux）

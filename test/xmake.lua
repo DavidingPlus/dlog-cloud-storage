@@ -12,7 +12,7 @@ add_requires("gtest")
 local gtest_groups = {
     common = {"testrun", "utils", "third_party"},
     win32 = {},
-    linux = {}
+    linux = {"server"}
 }
 
 local active_gtest_groups = {}
@@ -55,9 +55,13 @@ target("tests")
     apply_gtest_summary_config("tests", active_gtest_groups)
 
     for _, group in ipairs(active_gtest_groups) do
+        local test_files = {group .. "/*.cpp"}
+        if group == "server" then
+            table.insert(test_files, path.join(os.projectdir(), "src/server/config.cpp"))
+        end
         add_tests(group, {
             realtime_output = true,
-            files = {group .. "/*.cpp"}
+            files = test_files
         })
     end
 target_end()
