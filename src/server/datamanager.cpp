@@ -111,11 +111,12 @@ FileMetadata DataManager::getOneByUrl(const std::string &url) const
 
 FileMetadata DataManager::getOneByFilePath(const std::filesystem::path &filePath) const
 {
+    auto absoluteFilePath = utils::executableDirectory() / filePath;
     std::shared_lock lock(m_rwlock);
 
     for (auto &entry : m_table)
     {
-        if (filePath == entry.second.m_absoluteFilePath) return entry.second;
+        if (absoluteFilePath == entry.second.m_absoluteFilePath) return entry.second;
     }
 
     throw std::out_of_range("DataManager::getOneByFilePath(): file path not found: " + filePath.string());

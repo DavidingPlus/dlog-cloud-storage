@@ -65,7 +65,8 @@ public:
     // 根据下载 URL 获取元数据副本，未找到时抛出 std::out_of_range。
     FileMetadata getOneByUrl(const std::string &url) const;
 
-    // 根据文件路径获取元数据副本，未找到时抛出 std::out_of_range。
+    // 根据文件路径获取元数据副本，相对路径以可执行文件所在目录为基准。
+    // 查询路径转为绝对路径后直接与记录中的绝对路径比较，未找到时抛出 std::out_of_range。
     FileMetadata getOneByFilePath(const std::filesystem::path &filePath) const;
 
     // 获取全部元数据的副本。

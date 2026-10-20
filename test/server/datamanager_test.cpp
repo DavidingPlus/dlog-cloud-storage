@@ -529,7 +529,7 @@ TEST_F(DataManagerTests, LoadFromDiskPreservesAbsolutePathsAfterWorkingDirectory
 
     server::DataManager manager;
     ExpectInfo(manager.getOneByUrl(info.m_url), info);
-    ExpectInfo(manager.getOneByFilePath(info.m_absoluteFilePath), info);
+    ExpectInfo(manager.getOneByFilePath("./data/report.txt"), info);
 
     ASSERT_NO_THROW(manager.persistToDisk());
     EXPECT_EQ(readMetadata()[0]["absolute_file_path"].asString(), info.m_absoluteFilePath.string());
@@ -598,7 +598,8 @@ TEST_F(DataManagerTests, GetOneByFilePathComparesPathComponents)
     const auto body = utils::FileUtil(m_filePath).getContent();
 
     const std::vector<fs::path> paths = {
-        utils::executableDirectory() / "./data//folder///report.txt",
+        "./data//folder///report.txt",
+        "./data/folder/report.txt",
         info.m_absoluteFilePath};
     for (const auto &filePath : paths)
     {
@@ -608,6 +609,35 @@ TEST_F(DataManagerTests, GetOneByFilePathComparesPathComponents)
 
     ExpectInfo(manager.getOneByUrl(info.m_url), info);
     EXPECT_EQ(utils::FileUtil(m_filePath).getContent(), body);
+}
+
+TEST_F(DataManagerTests, GetOneByFilePathMatchesAbsoluteRecordUsingRelativePath)
+{
+    auto info = MakeInfo("report.txt");
+    info.m_absoluteFilePath = utils::executableDirectory() / "data" / "report.txt";
+    writeRecords({info});
+    const server::DataManager manager;
+
+    ExpectInfo(manager.getOneByFilePath("data/report.txt"), info);
+    ExpectInfo(manager.getOneByFilePath(info.m_absoluteFilePath), info);
+}
+
+TEST_F(DataManagerTests, GetOneByFilePathUsesExecutableDirectoryAfterWorkingDirectoryChanges)
+{
+    const auto relativeFile = m_directory.filename() / "files" / "report.txt";
+    auto info = MakeInfo("report.txt");
+    info.m_absoluteFilePath = utils::executableDirectory() / relativeFile;
+    auto decoy = MakeInfo("decoy.txt");
+    decoy.m_absoluteFilePath = m_directory / relativeFile;
+    ASSERT_FALSE(fs::exists(info.m_absoluteFilePath));
+    ASSERT_FALSE(fs::exists(decoy.m_absoluteFilePath));
+    writeRecords({info, decoy});
+    const server::DataManager manager;
+    fs::current_path(m_directory);
+
+    ExpectInfo(manager.getOneByFilePath(relativeFile), info);
+    ExpectInfo(manager.getOneByFilePath(info.m_absoluteFilePath), info);
+    ExpectInfo(manager.getOneByFilePath(decoy.m_absoluteFilePath), decoy);
 }
 
 TEST_F(DataManagerTests, MissingQueriesDoNotInsertRecords)

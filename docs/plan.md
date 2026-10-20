@@ -268,7 +268,7 @@ xmake test -y tests/core
 
 路径约定：配置文件、存储文件和元数据持久化文件的相对路径都以可执行文件所在目录为基准，绝对路径按原路径访问。`FileMetadata::FromFile()` 始终保存解析后的绝对路径；持久化字段 `absolute_file_path` 保存文件绝对路径，`loadFromDisk()` 直接恢复。`insert()`、`update()` 按 `FileMetadata` 已保存绝对路径的约定使用元数据。`DataManager` 构造时将元数据持久化文件路径解析为绝对路径，加载和保存使用同一路径，不受工作目录变化影响。
 
-`FileMetadata::m_absoluteFilePath`、`DataManager::m_metadataFilePath` 和相关路径入参统一使用 `std::filesystem::path`。服务端固定运行于 Linux，文件名和 JSON 路径统一约定使用 UTF-8；读入时直接将字符串赋给 `path`，写出时调用 `string()`。按存储路径查询时使用 `path` 的组成部分比较，不自动解析 `.`、`..` 或判断是否指向同一个文件。
+`FileMetadata::m_absoluteFilePath`、`DataManager::m_metadataFilePath` 和相关路径入参统一使用 `std::filesystem::path`。服务端固定运行于 Linux，文件名和 JSON 路径统一约定使用 UTF-8；读入时直接将字符串赋给 `path`，写出时调用 `string()`。`getOneByFilePath()` 将查询路径按可执行文件目录解析为绝对路径后，直接与记录中的绝对路径比较。暂不处理 `.`、`..` 等写法差异。该查询不要求实际文件存在，也不解析符号链接。
 
 这套流程处理的是文件元数据，上传文件的实际内容仍通过各自的存储路径读写。它便于理解和实现，但内存占用随记录数量增长，每次修改也需要序列化和写入全部记录。后续结合元数据数量、修改频率、加载耗时、内存占用和保存耗时决定是否调整。
 
