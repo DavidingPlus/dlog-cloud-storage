@@ -59,14 +59,14 @@ public:
     // 按 URL 更新元数据。
     bool update(const StorageInfo &info);
 
-    // 根据下载 URL 查询元数据，未找到时返回 false。
-    bool getOneByUrl(const std::string &url, StorageInfo *info) const;
+    // 根据下载 URL 获取元数据副本，未找到时抛出 std::out_of_range。
+    StorageInfo getOneByUrl(const std::string &url) const;
 
-    // 根据文件存储路径查询元数据，未找到时返回 false。
-    bool getOneByStoragePath(const std::string &storagePath, StorageInfo *info) const;
+    // 根据文件存储路径获取元数据副本，未找到时抛出 std::out_of_range。
+    StorageInfo getOneByStoragePath(const std::string &storagePath) const;
 
     // 获取全部元数据的副本。
-    bool getAll(std::vector<StorageInfo> *infos) const;
+    std::vector<StorageInfo> getAll() const;
 
 
 private:
