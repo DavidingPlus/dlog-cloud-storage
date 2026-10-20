@@ -1,5 +1,5 @@
-#ifndef _DLOG_CLOUD_STORAGE_COMMON_H_
-#define _DLOG_CLOUD_STORAGE_COMMON_H_
+#ifndef _DLOG_CLOUD_STORAGE_UTILS_COMMON_H_
+#define _DLOG_CLOUD_STORAGE_UTILS_COMMON_H_
 
 #include "globalmacros.h"
 
