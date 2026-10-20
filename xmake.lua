@@ -90,6 +90,7 @@ end
 target(project_name .. "-utils-static")
     set_default(false)
     set_kind("static")
+    on_install(function () end)
 
     apply_current_platform_target_config()
 
@@ -106,16 +107,30 @@ target(project_name .. "-utils-static")
     add_includedirs("src", os.dirs("src/**"), {public = true})
 target_end()
 
-
 -- 服务端仅在 Linux 目标平台下构建。
 if is_plat("linux") then
+    -- 服务端实现由程序入口、单元测试和服务端示例共用，内部静态库不安装到发布目录。
+    target(project_name .. "-server-static")
+        set_default(false)
+        set_kind("static")
+        on_install(function () end)
+
+        apply_current_platform_target_config()
+
+        add_deps(project_name .. "-utils-static")
+
+        set_targetdir("$(builddir)/$(plat)/$(arch)/$(mode)/lib/")
+
+        add_files("src/server/**.cpp|main.cpp")
+    target_end()
+
     target(project_name .. "-server")
         set_kind("binary")
 
         apply_current_platform_target_config()
 
-        add_deps(project_name .. "-utils-static")
-        add_files("src/server/**.cpp")
+        add_deps(project_name .. "-server-static")
+        add_files("src/server/main.cpp")
         set_targetdir("$(builddir)/$(plat)/$(arch)/$(mode)/bin/")
 
         -- 配置阶段同步配置到可执行文件目录下；修改配置后重新执行 xmake config 即可更新。

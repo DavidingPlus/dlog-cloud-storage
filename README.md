@@ -2,6 +2,14 @@
 
 基于 C++17 的轻量级云存储系统，集成 dlog 异步日志库，支持 Web 文件上传下载、普通存储和压缩存储。
 
+## 内部模块构建
+
+`dlog-cloud-storage-utils-static` 编译 `src/utils/` 下的通用工具，支持 Windows 和 Linux。Linux 下另有 `dlog-cloud-storage-server-static`，编译 `src/server/` 下除 `main.cpp` 外的服务端实现，并依赖工具静态库。服务端可执行目标只编译 `src/server/main.cpp`，链接服务端静态库。
+
+Linux 单元测试复用服务端静态库，其他平台的测试依赖工具静态库。开发示例按需通过 `add_deps("dlog-cloud-storage-utils-static")` 或 Linux 下的 `add_deps("dlog-cloud-storage-server-static")` 引入模块，无需再次添加模块的 `.cpp` 文件；目前只使用工具函数的 `ServerUtilsTest` 仍依赖工具静态库。同一平台、架构和构建配置下，各目标复用这些静态库的编译结果，并分别链接为可执行程序。
+
+两个内部静态库仅用于项目构建，不单独安装或打包。发布服务端时，所需内部实现静态链接到可执行程序中，实际需要的第三方动态库随程序一起打包。
+
 ## 单元测试
 
 `bundle`、`cpp-base64` 和官方 xmake-repo 的 `jsoncpp` 由 XMake 下载和链接，沿用项目当前构建模式的动态库配置。启用 GoogleTest 后运行：

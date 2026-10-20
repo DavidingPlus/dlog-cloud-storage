@@ -41,7 +41,11 @@ target("tests")
 
     add_packages("gtest")
     add_packages("bundle", "cpp-base64", "jsoncpp")
+
     add_deps("dlog-cloud-storage-utils-static")
+    if is_plat("linux") then
+        add_deps("dlog-cloud-storage-server-static")
+    end
 
     before_build(function ()
         os.tryrm("$(builddir)/$(plat)/$(arch)/$(mode)/test/gtest")
@@ -55,13 +59,9 @@ target("tests")
     apply_gtest_summary_config("tests", active_gtest_groups)
 
     for _, group in ipairs(active_gtest_groups) do
-        local test_files = {group .. "/*.cpp"}
-        if group == "server" then
-            table.insert(test_files, path.join(os.projectdir(), "src/server/config.cpp"))
-        end
         add_tests(group, {
             realtime_output = true,
-            files = test_files
+            files = {group .. "/*.cpp"}
         })
     end
 target_end()
