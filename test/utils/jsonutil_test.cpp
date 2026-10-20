@@ -79,16 +79,16 @@ TEST(JsonUtilTests, SerializeHandlesScalarRootsAndEmptyContainers)
 {
     const struct
     {
-        Json::Value value;
-        std::string expected;
+        Json::Value m_value;
+        std::string m_expected;
     } cases[] = {
         {Json::Value(), "null"}, {Json::Value(true), "true"}, {Json::Value(false), "false"}, {Json::Value(-42), "-42"}, {Json::Value(1.25), "1.25"}, {Json::Value("text"), R"("text")"}, {Json::Value(Json::arrayValue), "[]"}, {Json::Value(Json::objectValue), "{}"}};
 
     for (const auto &item : cases)
     {
-        SCOPED_TRACE(item.expected);
-        EXPECT_EQ(JsonUtil::Serialize(item.value), item.expected);
-        EXPECT_EQ(JsonUtil::UnSerialize(item.expected), item.value);
+        SCOPED_TRACE(item.m_expected);
+        EXPECT_EQ(JsonUtil::Serialize(item.m_value), item.m_expected);
+        EXPECT_EQ(JsonUtil::UnSerialize(item.m_expected), item.m_value);
     }
 }
 

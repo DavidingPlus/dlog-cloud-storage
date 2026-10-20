@@ -21,7 +21,7 @@ namespace
 {
     namespace fs = std::filesystem;
 
-    // 只准备文件，不访问单例，供首次初始化测试复用。
+    // 读取 XMake 复制的初始配置，不访问单例，供首次初始化测试复用。
     class ConfigFileTests : public ::testing::Test
     {
 
@@ -31,15 +31,7 @@ namespace
         {
             m_originalWorkingDirectory = fs::current_path();
             m_configFile = utils::executableDirectory() / "config" / "server.conf";
-            m_hadDirectory = fs::exists(m_configFile.parent_path());
-            m_hadFile = fs::exists(m_configFile);
-            if (m_hadFile)
-            {
-                m_originalContent = utils::FileUtil(m_configFile).getContent();
-            }
-
-            fs::create_directories(m_configFile.parent_path());
-            writeConfig(validConfig());
+            m_originalContent = utils::FileUtil(m_configFile).getContent();
             m_configPermissions = fs::status(m_configFile).permissions();
         }
 
@@ -51,7 +43,7 @@ namespace
                 fs::current_path(m_originalWorkingDirectory, error);
                 EXPECT_FALSE(error) << error.message();
             }
-            if (m_configFile.empty())
+            if (m_configPermissions == fs::perms::unknown)
             {
                 return;
             }
@@ -69,21 +61,7 @@ namespace
             }
 
             // 测试配置位于测试程序旁边，与服务端 bin/config 下的配置相互独立。
-            if (m_hadFile)
-            {
-                utils::FileUtil(m_configFile).setContent(m_originalContent);
-            }
-            else
-            {
-                fs::remove(m_configFile, error);
-            }
-            EXPECT_FALSE(error) << error.message();
-
-            if (!m_hadDirectory)
-            {
-                fs::remove(m_configFile.parent_path(), error);
-                EXPECT_FALSE(error) << error.message();
-            }
+            utils::FileUtil(m_configFile).setContent(m_originalContent);
 
             if (!m_workingDirectory.empty())
             {
@@ -92,20 +70,12 @@ namespace
             }
         }
 
-        static Json::Value validConfig()
+        Json::Value validConfig() const
         {
-            Json::Value root;
-            root["server_ip"] = "127.0.0.1";
-            root["server_port"] = 8081;
-            root["download_prefix"] = "/download/";
-            root["deep_storage_dir"] = "./deep_storage/";
-            root["low_storage_dir"] = "./low_storage/";
-            root["storage_info"] = "./storage.data";
-            root["bundle_format"] = bundle::LZIP;
-            return root;
+            return utils::JsonUtil::UnSerialize(m_originalContent);
         }
 
-        static Json::Value updatedConfig()
+        Json::Value updatedConfig() const
         {
             auto root = validConfig();
             root["server_ip"] = "0.0.0.0";
@@ -144,7 +114,7 @@ namespace
             utils::FileUtil(m_configFile).setContent(Json::writeString(Json::StreamWriterBuilder{}, root));
         }
 
-        static void expectConfig(const Json::Value &root)
+        static void ExpectConfig(const Json::Value &root)
         {
             const auto &config = server::Config::GetInstance();
             EXPECT_EQ(config.getServerIp(), root["server_ip"].asString());
@@ -161,8 +131,6 @@ namespace
         fs::path m_workingDirectory;
         std::string m_originalContent;
         fs::perms m_configPermissions = fs::perms::unknown;
-        bool m_hadDirectory = false;
-        bool m_hadFile = false;
     };
 
     class ConfigTests : public ConfigFileTests
@@ -198,10 +166,9 @@ TEST_F(ConfigInitializationDeathTest, FirstAccessLoadsAllFieldsBesideExecutable)
 {
     ASSERT_EXIT(
         {
-            writeConfig(updatedConfig());
             fs::current_path(fs::temp_directory_path());
             // 只调用 GetInstance()，确认构造函数完成加载。
-            expectConfig(updatedConfig());
+            ExpectConfig(validConfig());
             std::_Exit(::testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
         },
         ::testing::ExitedWithCode(EXIT_SUCCESS), "");
@@ -215,7 +182,7 @@ TEST_F(ConfigInitializationDeathTest, RetriesInitializationAfterMissingFile)
             EXPECT_THROW(server::Config::GetInstance(), fs::filesystem_error);
 
             writeConfig(updatedConfig());
-            expectConfig(updatedConfig());
+            ExpectConfig(updatedConfig());
             std::_Exit(::testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
         },
         ::testing::ExitedWithCode(EXIT_SUCCESS), "");
@@ -229,7 +196,7 @@ TEST_F(ConfigInitializationDeathTest, RetriesInitializationAfterMalformedJson)
             EXPECT_THROW(server::Config::GetInstance(), std::invalid_argument);
 
             writeConfig(updatedConfig());
-            expectConfig(updatedConfig());
+            ExpectConfig(updatedConfig());
             std::_Exit(::testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
         },
         ::testing::ExitedWithCode(EXIT_SUCCESS), "");
@@ -249,7 +216,7 @@ TEST_F(ConfigInitializationDeathTest, RetriesInitializationAfterRepeatedValidati
             }
 
             writeConfig(updatedConfig());
-            expectConfig(updatedConfig());
+            ExpectConfig(updatedConfig());
             std::_Exit(::testing::Test::HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
         },
         ::testing::ExitedWithCode(EXIT_SUCCESS), "");
@@ -260,7 +227,7 @@ TEST_F(ConfigInitializationDeathTest, RetriesInitializationAfterRepeatedValidati
 
 TEST_F(ConfigTests, LoadsAllSevenFields)
 {
-    expectConfig(validConfig());
+    ExpectConfig(validConfig());
 }
 
 TEST_F(ConfigTests, FindsConfigurationBesideExecutableAfterWorkingDirectoryChanges)
@@ -269,7 +236,7 @@ TEST_F(ConfigTests, FindsConfigurationBesideExecutableAfterWorkingDirectoryChang
     ASSERT_FALSE(::testing::Test::HasFatalFailure());
 
     ASSERT_NO_THROW(server::Config::GetInstance().readConfig());
-    expectConfig(validConfig());
+    ExpectConfig(validConfig());
 }
 
 TEST_F(ConfigTests, ReloadUpdatesAllFields)
@@ -278,7 +245,7 @@ TEST_F(ConfigTests, ReloadUpdatesAllFields)
     writeConfig(root);
 
     ASSERT_NO_THROW(server::Config::GetInstance().readConfig());
-    expectConfig(root);
+    ExpectConfig(root);
 }
 
 TEST_F(ConfigTests, ReturnsTheSameInstanceWithoutImplicitReload)
@@ -288,11 +255,11 @@ TEST_F(ConfigTests, ReturnsTheSameInstanceWithoutImplicitReload)
 
     auto &second = server::Config::GetInstance();
     EXPECT_EQ(&first, &second);
-    expectConfig(validConfig());
+    ExpectConfig(validConfig());
 
     ASSERT_NO_THROW(second.readConfig());
     EXPECT_EQ(&first, &server::Config::GetInstance());
-    expectConfig(updatedConfig());
+    ExpectConfig(updatedConfig());
 }
 
 TEST_F(ConfigTests, RejectsMalformedOrNonObjectDocuments)
@@ -302,7 +269,7 @@ TEST_F(ConfigTests, RejectsMalformedOrNonObjectDocuments)
         SCOPED_TRACE(content);
         utils::FileUtil(m_configFile).setContent(content);
         EXPECT_THROW(server::Config::GetInstance().readConfig(), std::invalid_argument);
-        expectConfig(validConfig());
+        ExpectConfig(validConfig());
     }
 }
 
@@ -316,7 +283,7 @@ TEST_F(ConfigTests, RejectsMissingFieldsBeforeUpdatingMembers)
         writeConfig(root);
 
         EXPECT_THROW(server::Config::GetInstance().readConfig(), std::invalid_argument);
-        expectConfig(validConfig());
+        ExpectConfig(validConfig());
     }
 }
 
@@ -333,7 +300,7 @@ TEST_F(ConfigTests, RejectsEmptyOrNonStringFields)
             writeConfig(root);
 
             EXPECT_THROW(server::Config::GetInstance().readConfig(), std::invalid_argument);
-            expectConfig(validConfig());
+            ExpectConfig(validConfig());
         }
     }
 }
@@ -351,7 +318,7 @@ TEST_F(ConfigTests, RejectsNonIntegerPortsAndCompressionFormats)
             writeConfig(root);
 
             EXPECT_THROW(server::Config::GetInstance().readConfig(), std::invalid_argument);
-            expectConfig(validConfig());
+            ExpectConfig(validConfig());
         }
     }
 }
@@ -366,7 +333,7 @@ TEST_F(ConfigTests, RejectsPortsOutsideTheAllowedRange)
         writeConfig(root);
 
         EXPECT_THROW(server::Config::GetInstance().readConfig(), std::invalid_argument);
-        expectConfig(validConfig());
+        ExpectConfig(validConfig());
     }
 }
 
@@ -380,7 +347,7 @@ TEST_F(ConfigTests, RejectsUnsupportedCompressionFormats)
         writeConfig(root);
 
         EXPECT_THROW(server::Config::GetInstance().readConfig(), std::invalid_argument);
-        expectConfig(validConfig());
+        ExpectConfig(validConfig());
     }
 }
 
@@ -407,7 +374,7 @@ TEST_F(ConfigTests, RejectsNumbersOutsideIntRangeWithoutTruncation)
             writeConfig(root);
 
             EXPECT_THROW(server::Config::GetInstance().readConfig(), std::invalid_argument);
-            expectConfig(validConfig());
+            ExpectConfig(validConfig());
         }
     }
 }
@@ -426,7 +393,7 @@ TEST_F(ConfigTests, AcceptsPortBoundariesAndSupportedCompressionFormats)
             writeConfig(root);
 
             ASSERT_NO_THROW(server::Config::GetInstance().readConfig());
-            expectConfig(root);
+            ExpectConfig(root);
         }
     }
 }
@@ -440,7 +407,7 @@ TEST_F(ConfigTests, AcceptsIntegralRealNumbersAccordingToJsonCppSemantics)
     writeConfig(root);
 
     ASSERT_NO_THROW(server::Config::GetInstance().readConfig());
-    expectConfig(root);
+    ExpectConfig(root);
 }
 
 TEST_F(ConfigTests, RejectsDownloadPrefixesWithoutLeadingOrTrailingSlash)
@@ -453,7 +420,7 @@ TEST_F(ConfigTests, RejectsDownloadPrefixesWithoutLeadingOrTrailingSlash)
         writeConfig(root);
 
         EXPECT_THROW(server::Config::GetInstance().readConfig(), std::invalid_argument);
-        expectConfig(validConfig());
+        ExpectConfig(validConfig());
     }
 }
 
@@ -467,7 +434,7 @@ TEST_F(ConfigTests, AcceptsRootAndNestedDownloadPrefixes)
         writeConfig(root);
 
         ASSERT_NO_THROW(server::Config::GetInstance().readConfig());
-        expectConfig(root);
+        ExpectConfig(root);
     }
 }
 
@@ -482,7 +449,7 @@ TEST_F(ConfigTests, PreservesUnicodeAndStoragePathsAsConfigured)
     writeConfig(root);
 
     ASSERT_NO_THROW(server::Config::GetInstance().readConfig());
-    expectConfig(root);
+    ExpectConfig(root);
 }
 
 TEST_F(ConfigTests, IgnoresUnknownFields)
@@ -493,7 +460,7 @@ TEST_F(ConfigTests, IgnoresUnknownFields)
     writeConfig(root);
 
     ASSERT_NO_THROW(server::Config::GetInstance().readConfig());
-    expectConfig(root);
+    ExpectConfig(root);
 }
 
 TEST_F(ConfigTests, MissingFileReportsTheFileErrorAndKeepsLoadedConfiguration)
@@ -501,7 +468,7 @@ TEST_F(ConfigTests, MissingFileReportsTheFileErrorAndKeepsLoadedConfiguration)
     fs::remove(m_configFile);
 
     EXPECT_THROW(server::Config::GetInstance().readConfig(), fs::filesystem_error);
-    expectConfig(validConfig());
+    ExpectConfig(validConfig());
 }
 
 TEST_F(ConfigTests, DoesNotFallBackToConfigurationInWorkingDirectory)
@@ -511,7 +478,7 @@ TEST_F(ConfigTests, DoesNotFallBackToConfigurationInWorkingDirectory)
     fs::remove(m_configFile);
 
     EXPECT_THROW(server::Config::GetInstance().readConfig(), fs::filesystem_error);
-    expectConfig(validConfig());
+    ExpectConfig(validConfig());
 }
 
 TEST_F(ConfigTests, DirectoryAtConfigFilePathReportsTheFileError)
@@ -520,7 +487,7 @@ TEST_F(ConfigTests, DirectoryAtConfigFilePathReportsTheFileError)
     fs::create_directory(m_configFile);
 
     EXPECT_THROW(server::Config::GetInstance().readConfig(), fs::filesystem_error);
-    expectConfig(validConfig());
+    ExpectConfig(validConfig());
 }
 
 TEST_F(ConfigTests, UnreadableFileReportsTheStreamError)
@@ -533,29 +500,29 @@ TEST_F(ConfigTests, UnreadableFileReportsTheStreamError)
     }
 
     EXPECT_THROW(server::Config::GetInstance().readConfig(), std::ios_base::failure);
-    expectConfig(validConfig());
+    ExpectConfig(validConfig());
 }
 
 TEST_F(ConfigTests, CanReloadAfterTheMissingFileIsRestored)
 {
     fs::remove(m_configFile);
     EXPECT_THROW(server::Config::GetInstance().readConfig(), fs::filesystem_error);
-    expectConfig(validConfig());
+    ExpectConfig(validConfig());
 
     writeConfig(updatedConfig());
     ASSERT_NO_THROW(server::Config::GetInstance().readConfig());
-    expectConfig(updatedConfig());
+    ExpectConfig(updatedConfig());
 }
 
 TEST_F(ConfigTests, CanReloadAfterMalformedJsonIsFixed)
 {
     utils::FileUtil(m_configFile).setContent("{");
     EXPECT_THROW(server::Config::GetInstance().readConfig(), std::invalid_argument);
-    expectConfig(validConfig());
+    ExpectConfig(validConfig());
 
     writeConfig(updatedConfig());
     ASSERT_NO_THROW(server::Config::GetInstance().readConfig());
-    expectConfig(updatedConfig());
+    ExpectConfig(updatedConfig());
 }
 
 TEST_F(ConfigTests, CanReloadAfterValidationFailuresWithoutPartialUpdates)
@@ -568,18 +535,18 @@ TEST_F(ConfigTests, CanReloadAfterValidationFailuresWithoutPartialUpdates)
         invalid[field] = Json::Value();
         writeConfig(invalid);
         EXPECT_THROW(config.readConfig(), std::invalid_argument);
-        expectConfig(validConfig());
+        ExpectConfig(validConfig());
     }
 
     writeConfig(updatedConfig());
     ASSERT_NO_THROW(config.readConfig());
     EXPECT_EQ(&config, &server::Config::GetInstance());
-    expectConfig(updatedConfig());
+    ExpectConfig(updatedConfig());
 
     // 已经加载过新配置后再次失败，应该保留新值而非恢复为默认值。
     auto invalid = validConfig();
     invalid["download_prefix"] = "/invalid";
     writeConfig(invalid);
     EXPECT_THROW(config.readConfig(), std::invalid_argument);
-    expectConfig(updatedConfig());
+    ExpectConfig(updatedConfig());
 }

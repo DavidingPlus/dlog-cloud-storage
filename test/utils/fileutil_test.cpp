@@ -75,7 +75,7 @@ namespace
         }
 
         // 直接用标准文件流准备输入和检查输出，避免读写接口同时出错时相互掩盖。
-        static void writeFile(const fs::path &file, std::string_view content)
+        static void WriteFile(const fs::path &file, std::string_view content)
         {
             std::ofstream stream;
             stream.exceptions(std::ios::failbit | std::ios::badbit);
@@ -84,7 +84,7 @@ namespace
             stream.close();
         }
 
-        static std::string readFile(const fs::path &file)
+        static std::string ReadFile(const fs::path &file)
         {
             std::ifstream stream;
             stream.exceptions(std::ios::failbit | std::ios::badbit);
@@ -137,8 +137,8 @@ namespace
 TEST_F(FileUtilTests, ConstructorKeepsItsOwnPath)
 {
     const auto original = path("original.txt");
-    writeFile(original, "original");
-    writeFile(path("other.txt"), "other");
+    WriteFile(original, "original");
+    WriteFile(path("other.txt"), "other");
     auto supplied = original;
     const FileUtil file(supplied);
     supplied = path("other.txt");
@@ -150,14 +150,14 @@ TEST_F(FileUtilTests, ConstructorKeepsItsOwnPath)
 TEST_F(FileUtilTests, FileSizeCountsBytesIncludingNulsAndUtf8)
 {
     const std::string content = std::string("a\0b\r\n", 5) + u8"云存储";
-    writeFile(path("binary.dat"), content);
+    WriteFile(path("binary.dat"), content);
 
     EXPECT_EQ(FileUtil(path("binary.dat")).fileSize(), content.size());
 }
 
 TEST_F(FileUtilTests, EmptyFileHasZeroSizeAndEmptyContent)
 {
-    writeFile(path("empty.dat"), "");
+    WriteFile(path("empty.dat"), "");
     const FileUtil file(path("empty.dat"));
 
     EXPECT_EQ(file.fileSize(), 0U);
@@ -175,21 +175,21 @@ TEST(FileUtilPathTests, FileNameUsesOnlyTheLastPathComponent)
 {
     const struct
     {
-        fs::path input;
-        fs::path expected;
+        fs::path m_input;
+        fs::path m_expected;
     } cases[] = {
         {"", ""}, {"report.txt", "report.txt"}, {"data/report.tar.gz", "report.tar.gz"}, {"/missing/directory/report.txt", "report.txt"}, {"data/", ""}, {"/", ""}, {".", "."}, {"..", ".."}, {fs::u8path(u8"不存在/云 存储.txt"), fs::u8path(u8"云 存储.txt")}};
 
     for (const auto &item : cases)
     {
-        SCOPED_TRACE(item.input.u8string());
-        EXPECT_EQ(FileUtil(item.input).fileName(), item.expected);
+        SCOPED_TRACE(item.m_input.u8string());
+        EXPECT_EQ(FileUtil(item.m_input).fileName(), item.m_expected);
     }
 }
 
 TEST_F(FileUtilTests, LastModifyTimeReadsTheStoredTimeOnEachCall)
 {
-    writeFile(path("time.txt"), "data");
+    WriteFile(path("time.txt"), "data");
     const FileUtil file(path("time.txt"));
     const auto expected = fs::file_time_type::clock::now() - std::chrono::hours(24);
     fs::last_write_time(path("time.txt"), expected);
@@ -218,7 +218,7 @@ TEST_F(FileUtilTests, GetContentPreservesEveryByteAndLineEnding)
     for (unsigned int byte = 0; byte < 256; ++byte) content.push_back(static_cast<char>(byte));
     content += "\r\nline one\nline two\r\n";
     content += u8"云存储";
-    writeFile(path(u8"含 空格的文件.dat"), content);
+    WriteFile(path(u8"含 空格的文件.dat"), content);
 
     EXPECT_EQ(FileUtil(path(u8"含 空格的文件.dat")).getContent(), content);
 }
@@ -227,32 +227,32 @@ TEST_F(FileUtilTests, ReadsAndWritesHandleDataAcrossStreamBufferBoundaries)
 {
     std::string content;
     for (size_t i = 0; i < 65537; ++i) content.push_back(static_cast<char>(i % 256));
-    writeFile(path("input.dat"), content);
+    WriteFile(path("input.dat"), content);
 
     const FileUtil input(path("input.dat"));
     EXPECT_EQ(input.getContent(), content);
     EXPECT_EQ(input.getPosLen(4090, 8193), content.substr(4090, 8193));
 
     FileUtil(path("output.dat")).setContent(content);
-    EXPECT_EQ(readFile(path("output.dat")), content);
+    EXPECT_EQ(ReadFile(path("output.dat")), content);
 }
 
 TEST_F(FileUtilTests, GetContentObservesLaterChangesToTheFile)
 {
     const auto target = path("changing.txt");
-    writeFile(target, "first");
+    WriteFile(target, "first");
     const FileUtil file(target);
     EXPECT_EQ(file.getContent(), "first");
 
-    writeFile(target, "a different and longer value");
+    WriteFile(target, "a different and longer value");
     EXPECT_EQ(file.getContent(), "a different and longer value");
-    writeFile(target, "");
+    WriteFile(target, "");
     EXPECT_TRUE(file.getContent().empty());
 }
 
 TEST_F(FileUtilTests, GetPosLenReadsPrefixMiddleSuffixAndWholeFile)
 {
-    writeFile(path("range.txt"), "abcdef");
+    WriteFile(path("range.txt"), "abcdef");
     const FileUtil file(path("range.txt"));
 
     EXPECT_EQ(file.getPosLen(0, 2), "ab");
@@ -265,14 +265,14 @@ TEST_F(FileUtilTests, GetPosLenReadsPrefixMiddleSuffixAndWholeFile)
 TEST_F(FileUtilTests, GetPosLenCountsBytesAcrossNulsAndHighBytes)
 {
     const std::string content("a\0b\x80\xff\r\n", 7);
-    writeFile(path("range.dat"), content);
+    WriteFile(path("range.dat"), content);
 
     EXPECT_EQ(FileUtil(path("range.dat")).getPosLen(1, 4), std::string("\0b\x80\xff", 4));
 }
 
 TEST_F(FileUtilTests, ZeroLengthReadsAreAllowedUpToTheEndOfTheFile)
 {
-    writeFile(path("range.txt"), "abcdef");
+    WriteFile(path("range.txt"), "abcdef");
     const FileUtil file(path("range.txt"));
 
     EXPECT_TRUE(file.getPosLen(0, 0).empty());
@@ -283,7 +283,7 @@ TEST_F(FileUtilTests, ZeroLengthReadsAreAllowedUpToTheEndOfTheFile)
 
 TEST_F(FileUtilTests, GetPosLenRejectsRangesPastTheEndAndOverflowingArguments)
 {
-    writeFile(path("range.txt"), "abcdef");
+    WriteFile(path("range.txt"), "abcdef");
     const FileUtil file(path("range.txt"));
 
     EXPECT_THROW(file.getPosLen(0, 7), std::out_of_range);
@@ -296,7 +296,7 @@ TEST_F(FileUtilTests, GetPosLenRejectsRangesPastTheEndAndOverflowingArguments)
 
 TEST_F(FileUtilTests, ReadsDoNotKeepThePreviousStreamPosition)
 {
-    writeFile(path("repeat.txt"), "abcdef");
+    WriteFile(path("repeat.txt"), "abcdef");
     const FileUtil file(path("repeat.txt"));
 
     EXPECT_EQ(file.getPosLen(4, 2), "ef");
@@ -322,16 +322,16 @@ TEST_F(FileUtilTests, SetContentCreatesAFileAndPreservesBinaryData)
     FileUtil(target).setContent(content);
 
     EXPECT_TRUE(fs::is_regular_file(target));
-    EXPECT_EQ(readFile(target), content);
+    EXPECT_EQ(ReadFile(target), content);
 }
 
 TEST_F(FileUtilTests, SetContentTruncatesThePreviousLongerContent)
 {
-    writeFile(path("overwrite.txt"), "this is a much longer previous value");
+    WriteFile(path("overwrite.txt"), "this is a much longer previous value");
 
     FileUtil(path("overwrite.txt")).setContent("new");
 
-    EXPECT_EQ(readFile(path("overwrite.txt")), "new");
+    EXPECT_EQ(ReadFile(path("overwrite.txt")), "new");
     EXPECT_EQ(fs::file_size(path("overwrite.txt")), 3U);
 }
 
@@ -341,9 +341,9 @@ TEST_F(FileUtilTests, EmptyContentCreatesAnEmptyFileAndClearsAnExistingFile)
     EXPECT_TRUE(fs::is_regular_file(path("new.txt")));
     EXPECT_EQ(fs::file_size(path("new.txt")), 0U);
 
-    writeFile(path("existing.txt"), "previous data");
+    WriteFile(path("existing.txt"), "previous data");
     FileUtil(path("existing.txt")).setContent("");
-    EXPECT_TRUE(readFile(path("existing.txt")).empty());
+    EXPECT_TRUE(ReadFile(path("existing.txt")).empty());
 }
 
 TEST_F(FileUtilTests, SetContentWritesOnlyTheSelectedStringView)
@@ -353,7 +353,7 @@ TEST_F(FileUtilTests, SetContentWritesOnlyTheSelectedStringView)
 
     FileUtil(path("view.dat")).setContent(content);
 
-    EXPECT_EQ(readFile(path("view.dat")), std::string("a\0b", 3));
+    EXPECT_EQ(ReadFile(path("view.dat")), std::string("a\0b", 3));
 }
 
 TEST_F(FileUtilTests, SetContentRejectsDirectoriesAndMissingParentDirectories)
@@ -366,7 +366,7 @@ TEST_F(FileUtilTests, SetContentRejectsDirectoriesAndMissingParentDirectories)
 TEST_F(FileUtilTests, ReadPermissionFailuresAreReportedAsStreamErrors)
 {
     const auto target = path("unreadable.txt");
-    writeFile(target, "data");
+    WriteFile(target, "data");
     const ScopedPermissions permissions(target, fs::perms::owner_write);
     std::ifstream probe(target, std::ios::binary);
     if (probe.is_open()) GTEST_SKIP() << "The current user can read files without read permission";
@@ -377,13 +377,13 @@ TEST_F(FileUtilTests, ReadPermissionFailuresAreReportedAsStreamErrors)
 TEST_F(FileUtilTests, WritePermissionFailuresPreserveTheExistingContent)
 {
     const auto target = path("readonly.txt");
-    writeFile(target, "keep this data");
+    WriteFile(target, "keep this data");
     const ScopedPermissions permissions(target, fs::perms::owner_read);
     std::ofstream probe(target, std::ios::binary | std::ios::app);
     if (probe.is_open()) GTEST_SKIP() << "The current user can write files without write permission";
 
     EXPECT_THROW(FileUtil(target).setContent("replacement"), std::ios_base::failure);
-    EXPECT_EQ(readFile(target), "keep this data");
+    EXPECT_EQ(ReadFile(target), "keep this data");
 }
 
 TEST(FileUtilWriteFailureTests, SetContentReportsBufferedWriteFailure)
@@ -400,7 +400,7 @@ TEST(FileUtilWriteFailureTests, SetContentReportsBufferedWriteFailure)
 
 TEST_F(FileUtilTests, ExistsDistinguishesMissingFilesRegularFilesAndDirectories)
 {
-    writeFile(path("file.txt"), "data");
+    WriteFile(path("file.txt"), "data");
     fs::create_directory(path("directory"));
 
     EXPECT_FALSE(FileUtil(path("missing.txt")).exists());
@@ -412,7 +412,7 @@ TEST_F(FileUtilTests, ExistsFollowsSymbolicLinkTargets)
 {
     if (!canCreateSymlinks()) GTEST_SKIP() << "Symbolic links are unavailable";
 
-    writeFile(path("file.txt"), "data");
+    WriteFile(path("file.txt"), "data");
     fs::create_directory(path("directory"));
     fs::create_symlink("file.txt", path("file-link"));
     fs::create_directory_symlink("directory", path("directory-link"));
@@ -428,7 +428,7 @@ TEST_F(FileUtilTests, FileAccessFollowsTheLinkButFileNameKeepsTheLinkName)
     if (!canCreateSymlinks()) GTEST_SKIP() << "Symbolic links are unavailable";
 
     const auto target = path("target.txt");
-    writeFile(target, "original");
+    WriteFile(target, "original");
     fs::create_symlink("target.txt", path("file-link"));
     const FileUtil link(path("file-link"));
 
@@ -439,7 +439,7 @@ TEST_F(FileUtilTests, FileAccessFollowsTheLinkButFileNameKeepsTheLinkName)
 
     link.setContent("new");
     EXPECT_TRUE(fs::is_symlink(path("file-link")));
-    EXPECT_EQ(readFile(target), "new");
+    EXPECT_EQ(ReadFile(target), "new");
 }
 
 TEST_F(FileUtilTests, CreateDirectoryCreatesAllMissingParents)
@@ -455,19 +455,19 @@ TEST_F(FileUtilTests, CreateDirectoryCreatesAllMissingParents)
 TEST_F(FileUtilTests, CreateDirectoryAcceptsAnExistingDirectory)
 {
     fs::create_directory(path("existing"));
-    writeFile(path("existing/keep.txt"), "keep");
+    WriteFile(path("existing/keep.txt"), "keep");
 
     EXPECT_NO_THROW(FileUtil(path("existing")).createDirectory());
-    EXPECT_EQ(readFile(path("existing/keep.txt")), "keep");
+    EXPECT_EQ(ReadFile(path("existing/keep.txt")), "keep");
 }
 
 TEST_F(FileUtilTests, CreateDirectoryRejectsFileConflicts)
 {
-    writeFile(path("file.txt"), "keep");
+    WriteFile(path("file.txt"), "keep");
 
     EXPECT_THROW(FileUtil(path("file.txt")).createDirectory(), fs::filesystem_error);
     EXPECT_THROW(FileUtil(path("file.txt/child")).createDirectory(), fs::filesystem_error);
-    EXPECT_EQ(readFile(path("file.txt")), "keep");
+    EXPECT_EQ(ReadFile(path("file.txt")), "keep");
 }
 
 TEST_F(FileUtilTests, DirectoryPermissionFailuresAreReported)
@@ -489,11 +489,11 @@ TEST_F(FileUtilTests, ScanDirectoryReturnsNoEntriesForAnEmptyDirectory)
 
 TEST_F(FileUtilTests, ScanDirectoryReturnsOnlyDirectRegularFiles)
 {
-    writeFile(path("report.txt"), "data");
-    writeFile(path(".hidden"), "");
-    writeFile(path(u8"报告 文件.txt"), "data");
+    WriteFile(path("report.txt"), "data");
+    WriteFile(path(".hidden"), "");
+    WriteFile(path(u8"报告 文件.txt"), "data");
     fs::create_directories(path("child/nested"));
-    writeFile(path("child/inside.txt"), "data");
+    WriteFile(path("child/inside.txt"), "data");
 
     const auto files = FileUtil(m_directory).scanDirectory();
     const std::set<fs::path> expected = {path("report.txt"), path(".hidden"), path(u8"报告 文件.txt")};
@@ -505,7 +505,7 @@ TEST_F(FileUtilTests, ScanDirectoryReturnsOnlyDirectRegularFiles)
 
 TEST_F(FileUtilTests, ScanDirectoryKeepsTheRelativePathPrefix)
 {
-    writeFile(path("report.txt"), "data");
+    WriteFile(path("report.txt"), "data");
     const auto relative = fs::relative(m_directory, fs::current_path());
     if (relative.empty()) GTEST_SKIP() << "The temporary directory and working directory have different roots";
     ASSERT_TRUE(relative.is_relative());
@@ -520,7 +520,7 @@ TEST_F(FileUtilTests, ScanDirectoryFollowsFileLinksAndSkipsDirectoryAndBrokenLin
 {
     if (!canCreateSymlinks()) GTEST_SKIP() << "Symbolic links are unavailable";
 
-    writeFile(path("target.txt"), "data");
+    WriteFile(path("target.txt"), "data");
     fs::create_directory(path("child"));
     fs::create_symlink("target.txt", path("file-link"));
     fs::create_directory_symlink("child", path("directory-link"));
@@ -543,7 +543,7 @@ TEST_F(FileUtilTests, ScanDirectorySkipsLinksToSpecialFiles)
 
 TEST_F(FileUtilTests, ScanDirectoryRejectsMissingPathsAndRegularFiles)
 {
-    writeFile(path("file.txt"), "data");
+    WriteFile(path("file.txt"), "data");
 
     EXPECT_THROW(FileUtil(path("missing")).scanDirectory(), fs::filesystem_error);
     EXPECT_THROW(FileUtil(path("file.txt")).scanDirectory(), fs::filesystem_error);
@@ -553,7 +553,7 @@ TEST_F(FileUtilTests, ScanAndExistsReportDirectoryAccessErrors)
 {
     const auto parent = path("restricted");
     fs::create_directory(parent);
-    writeFile(parent / "file.txt", "data");
+    WriteFile(parent / "file.txt", "data");
     const ScopedPermissions permissions(parent, fs::perms::none);
     std::error_code error;
     const fs::directory_iterator probe(parent, error);
