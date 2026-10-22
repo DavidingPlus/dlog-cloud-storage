@@ -50,7 +50,7 @@ namespace
             m_filePath = m_directory / "metadata" / "storage.json";
             fs::create_directory(m_filePath.parent_path());
             writeRecords({});
-            configureStorageFile(m_filePath);
+            configureMetadataFile(m_filePath);
         }
 
         void TearDown() override
@@ -76,10 +76,10 @@ namespace
             }
         }
 
-        void configureStorageFile(const fs::path &storageFile) const
+        void configureMetadataFile(const fs::path &metadataFile) const
         {
             auto root = utils::JsonUtil::UnSerialize(m_originalConfig);
-            root["storage_info"] = storageFile.string();
+            root["storage_info"] = metadataFile.string();
             utils::FileUtil(m_configFile).setContent(Json::writeString(Json::StreamWriterBuilder{}, root));
             server::Config::GetInstance().readConfig();
         }
@@ -255,7 +255,7 @@ TEST_F(DataManagerTests, ConstructorSupportsUtf8MetadataFilePath)
     const auto storageFile = m_directory / u8"元数据 文件.json";
     fs::rename(m_filePath, storageFile);
     m_filePath = storageFile;
-    configureStorageFile(storageFile);
+    configureMetadataFile(storageFile);
     const auto info = MakeInfo(u8"报告.txt");
     writeRecords({info});
 
@@ -448,7 +448,7 @@ TEST_F(DataManagerTests, ConstructorCanBeRetriedAfterInvalidRecord)
 TEST_F(DataManagerTests, RelativeMetadataPathUsesExecutableDirectoryForLoadingAndPersistence)
 {
     const auto relativeFile = m_directory.filename() / "metadata" / "storage.json";
-    configureStorageFile(relativeFile);
+    configureMetadataFile(relativeFile);
     const auto info = MakeInfo("report.txt");
     writeRecords({info});
 
@@ -476,7 +476,7 @@ TEST_F(DataManagerTests, RelativeMetadataPathUsesExecutableDirectoryForLoadingAn
 TEST_F(DataManagerTests, ConstructorDoesNotFallBackToMetadataInWorkingDirectory)
 {
     const auto relativeFile = m_directory.filename() / "missing.json";
-    configureStorageFile(relativeFile);
+    configureMetadataFile(relativeFile);
     const auto workingDirectory = m_directory / "working";
     const auto decoy = workingDirectory / relativeFile;
     fs::create_directories(decoy.parent_path());
@@ -877,7 +877,7 @@ TEST_F(DataManagerTests, InstancesKeepTheirOwnConfiguredFilePath)
     server::DataManager manager;
     const auto otherFile = m_directory / "other.json";
     utils::FileUtil(otherFile).setContent("[]");
-    configureStorageFile(otherFile);
+    configureMetadataFile(otherFile);
 
     const auto added = MakeInfo("added.txt");
     ASSERT_NO_THROW(manager.insert(added));
@@ -885,7 +885,7 @@ TEST_F(DataManagerTests, InstancesKeepTheirOwnConfiguredFilePath)
     const server::DataManager other;
     EXPECT_TRUE(other.getAll().empty());
     EXPECT_EQ(utils::FileUtil(otherFile).getContent(), "[]");
-    configureStorageFile(m_filePath);
+    configureMetadataFile(m_filePath);
     const server::DataManager restored;
     ExpectInfos(restored.getAll(), {info, added});
 }

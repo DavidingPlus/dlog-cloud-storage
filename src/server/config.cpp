@@ -53,7 +53,7 @@ void Config::readConfig()
     m_downloadPrefix = downloadPrefix;
     m_deepStorageDir = root["deep_storage_dir"].asString();
     m_lowStorageDir = root["low_storage_dir"].asString();
-    m_storageInfo = root["storage_info"].asString();
+    m_metadataFilePath = root["storage_info"].asString();
     m_bundleFormat = root["bundle_format"].asInt();
 }
 

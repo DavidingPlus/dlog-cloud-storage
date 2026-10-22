@@ -34,7 +34,7 @@ public:
 
     std::string getLowStorageDir() const { return m_lowStorageDir; }
 
-    std::string getStorageInfoFile() const { return m_storageInfo; }
+    std::string getMetadataFilePath() const { return m_metadataFilePath; }
 
     int getBundleFormat() const { return m_bundleFormat; }
 
@@ -60,7 +60,7 @@ private:
     std::string m_lowStorageDir;
 
     // 文件元数据的持久化文件。
-    std::string m_storageInfo;
+    std::string m_metadataFilePath;
 
     // bundle 压缩格式编号。
     int m_bundleFormat = 0;

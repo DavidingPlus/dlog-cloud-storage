@@ -46,7 +46,7 @@ class DataManager
 
 public:
 
-    DataManager() : m_metadataFilePath(utils::executableDirectory() / Config::GetInstance().getStorageInfoFile()) { loadFromDisk(); }
+    DataManager() : m_metadataFilePath(utils::executableDirectory() / Config::GetInstance().getMetadataFilePath()) { loadFromDisk(); }
 
     ~DataManager() = default;
 

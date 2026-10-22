@@ -122,7 +122,7 @@ namespace
             EXPECT_EQ(config.getDownloadPrefix(), root["download_prefix"].asString());
             EXPECT_EQ(config.getDeepStorageDir(), root["deep_storage_dir"].asString());
             EXPECT_EQ(config.getLowStorageDir(), root["low_storage_dir"].asString());
-            EXPECT_EQ(config.getStorageInfoFile(), root["storage_info"].asString());
+            EXPECT_EQ(config.getMetadataFilePath(), root["storage_info"].asString());
             EXPECT_EQ(config.getBundleFormat(), root["bundle_format"].asInt());
         }
 
