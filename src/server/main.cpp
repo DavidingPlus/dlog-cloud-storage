@@ -10,9 +10,9 @@ int main()
     std::cout << "server_ip: " << config.getServerIp() << '\n'
               << "server_port: " << config.getServerPort() << '\n'
               << "download_prefix: " << config.getDownloadPrefix() << '\n'
-              << "deep_storage_dir: " << config.getDeepStorageDir() << '\n'
-              << "low_storage_dir: " << config.getLowStorageDir() << '\n'
-              << "metadata_file: " << config.getMetadataFilePath() << '\n'
+              << "deep_storage_dir: " << config.getDeepStorageDir().string() << '\n'
+              << "low_storage_dir: " << config.getLowStorageDir().string() << '\n'
+              << "metadata_file: " << config.getMetadataFilePath().string() << '\n'
               << "bundle_format: " << config.getBundleFormat()
               << std::endl;
 }

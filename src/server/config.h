@@ -3,6 +3,7 @@
 
 #include "globalmacros.h"
 
+#include <filesystem>
 #include <string>
 
 
@@ -30,11 +31,11 @@ public:
 
     std::string getDownloadPrefix() const { return m_downloadPrefix; }
 
-    std::string getDeepStorageDir() const { return m_deepStorageDir; }
+    std::filesystem::path getDeepStorageDir() const { return m_deepStorageDir; }
 
-    std::string getLowStorageDir() const { return m_lowStorageDir; }
+    std::filesystem::path getLowStorageDir() const { return m_lowStorageDir; }
 
-    std::string getMetadataFilePath() const { return m_metadataFilePath; }
+    std::filesystem::path getMetadataFilePath() const { return m_metadataFilePath; }
 
     int getBundleFormat() const { return m_bundleFormat; }
 
@@ -54,13 +55,13 @@ private:
     std::string m_downloadPrefix;
 
     // 深度存储文件的存储目录。
-    std::string m_deepStorageDir;
+    std::filesystem::path m_deepStorageDir;
 
     // 浅度存储文件的存储目录。
-    std::string m_lowStorageDir;
+    std::filesystem::path m_lowStorageDir;
 
     // 文件元数据的持久化文件。
-    std::string m_metadataFilePath;
+    std::filesystem::path m_metadataFilePath;
 
     // bundle 压缩格式编号。
     int m_bundleFormat = 0;
