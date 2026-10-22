@@ -83,7 +83,7 @@ namespace
             root["download_prefix"] = "/files/";
             root["deep_storage_dir"] = "./data/compressed/";
             root["low_storage_dir"] = "./data/normal/";
-            root["storage_info"] = "./data/metadata.json";
+            root["metadata_file"] = "./data/metadata.json";
             root["bundle_format"] = bundle::RAW;
             return root;
         }
@@ -122,7 +122,7 @@ namespace
             EXPECT_EQ(config.getDownloadPrefix(), root["download_prefix"].asString());
             EXPECT_EQ(config.getDeepStorageDir(), root["deep_storage_dir"].asString());
             EXPECT_EQ(config.getLowStorageDir(), root["low_storage_dir"].asString());
-            EXPECT_EQ(config.getMetadataFilePath(), root["storage_info"].asString());
+            EXPECT_EQ(config.getMetadataFilePath(), root["metadata_file"].asString());
             EXPECT_EQ(config.getBundleFormat(), root["bundle_format"].asInt());
         }
 
@@ -206,7 +206,7 @@ TEST_F(ConfigInitializationDeathTest, RetriesInitializationAfterRepeatedValidati
 {
     ASSERT_EXIT(
         {
-            for (const char *field : {"server_ip", "server_port", "download_prefix", "deep_storage_dir", "low_storage_dir", "storage_info", "bundle_format"})
+            for (const char *field : {"server_ip", "server_port", "download_prefix", "deep_storage_dir", "low_storage_dir", "metadata_file", "bundle_format"})
             {
                 SCOPED_TRACE(field);
                 auto root = updatedConfig();
@@ -275,7 +275,7 @@ TEST_F(ConfigTests, RejectsMalformedOrNonObjectDocuments)
 
 TEST_F(ConfigTests, RejectsMissingFieldsBeforeUpdatingMembers)
 {
-    for (const char *field : {"server_ip", "server_port", "download_prefix", "deep_storage_dir", "low_storage_dir", "storage_info", "bundle_format"})
+    for (const char *field : {"server_ip", "server_port", "download_prefix", "deep_storage_dir", "low_storage_dir", "metadata_file", "bundle_format"})
     {
         SCOPED_TRACE(field);
         auto root = updatedConfig();
@@ -289,7 +289,7 @@ TEST_F(ConfigTests, RejectsMissingFieldsBeforeUpdatingMembers)
 
 TEST_F(ConfigTests, RejectsEmptyOrNonStringFields)
 {
-    for (const char *field : {"server_ip", "download_prefix", "deep_storage_dir", "low_storage_dir", "storage_info"})
+    for (const char *field : {"server_ip", "download_prefix", "deep_storage_dir", "low_storage_dir", "metadata_file"})
     {
         SCOPED_TRACE(field);
         for (const auto &value : {Json::Value(), Json::Value(""), Json::Value(42), Json::Value(1.5), Json::Value(false), Json::Value(true), Json::Value(Json::arrayValue), Json::Value(Json::objectValue)})
@@ -445,7 +445,7 @@ TEST_F(ConfigTests, PreservesUnicodeAndFilePathsAsConfigured)
     root["download_prefix"] = u8"/云存储/";
     root["deep_storage_dir"] = u8"/srv/cloud/深度 存储/";
     root["low_storage_dir"] = u8"../普通 存储/";
-    root["storage_info"] = u8"./元数据/文件 \"信息\".json";
+    root["metadata_file"] = u8"./元数据/文件 \"信息\".json";
     writeConfig(root);
 
     ASSERT_NO_THROW(server::Config::GetInstance().readConfig());
@@ -528,7 +528,7 @@ TEST_F(ConfigTests, CanReloadAfterMalformedJsonIsFixed)
 TEST_F(ConfigTests, CanReloadAfterValidationFailuresWithoutPartialUpdates)
 {
     auto &config = server::Config::GetInstance();
-    for (const char *field : {"server_ip", "server_port", "download_prefix", "deep_storage_dir", "low_storage_dir", "storage_info", "bundle_format"})
+    for (const char *field : {"server_ip", "server_port", "download_prefix", "deep_storage_dir", "low_storage_dir", "metadata_file", "bundle_format"})
     {
         SCOPED_TRACE(field);
         auto invalid = updatedConfig();

@@ -33,7 +33,7 @@ void Config::readConfig()
     if (!root.isObject()) throw std::invalid_argument("Config::readConfig(): root must be an object");
 
     // 校验字段。
-    for (const char *field : {"server_ip", "download_prefix", "deep_storage_dir", "low_storage_dir", "storage_info"})
+    for (const char *field : {"server_ip", "download_prefix", "deep_storage_dir", "low_storage_dir", "metadata_file"})
     {
         if (!root[field].isString() || root[field].asString().empty()) throw std::invalid_argument(std::string("Config::readConfig(): '") + field + "' must be a non-empty string");
     }
@@ -53,7 +53,7 @@ void Config::readConfig()
     m_downloadPrefix = downloadPrefix;
     m_deepStorageDir = root["deep_storage_dir"].asString();
     m_lowStorageDir = root["low_storage_dir"].asString();
-    m_metadataFilePath = root["storage_info"].asString();
+    m_metadataFilePath = root["metadata_file"].asString();
     m_bundleFormat = root["bundle_format"].asInt();
 }
 

@@ -12,7 +12,7 @@ int main()
               << "download_prefix: " << config.getDownloadPrefix() << '\n'
               << "deep_storage_dir: " << config.getDeepStorageDir() << '\n'
               << "low_storage_dir: " << config.getLowStorageDir() << '\n'
-              << "storage_info: " << config.getMetadataFilePath() << '\n'
+              << "metadata_file: " << config.getMetadataFilePath() << '\n'
               << "bundle_format: " << config.getBundleFormat()
               << std::endl;
 }

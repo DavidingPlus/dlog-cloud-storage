@@ -62,7 +62,7 @@ namespace
                 EXPECT_FALSE(error) << error.message();
             }
 
-            // 复用 XMake 复制的配置，只替换 storage_info；结束后同时恢复文件和单例。
+            // 复用 XMake 复制的配置，只替换 metadata_file；结束后同时恢复文件和单例。
             if (!m_originalConfig.empty())
             {
                 EXPECT_NO_THROW(utils::FileUtil(m_configFile).setContent(m_originalConfig));
@@ -79,7 +79,7 @@ namespace
         void configureMetadataFile(const fs::path &metadataFile) const
         {
             auto root = utils::JsonUtil::UnSerialize(m_originalConfig);
-            root["storage_info"] = metadataFile.string();
+            root["metadata_file"] = metadataFile.string();
             utils::FileUtil(m_configFile).setContent(Json::writeString(Json::StreamWriterBuilder{}, root));
             server::Config::GetInstance().readConfig();
         }
