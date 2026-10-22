@@ -120,11 +120,11 @@ namespace
             EXPECT_EQ(config.getServerIp(), root["server_ip"].asString());
             EXPECT_EQ(config.getServerPort(), root["server_port"].asInt());
             EXPECT_EQ(config.getDownloadPrefix(), root["download_prefix"].asString());
-            EXPECT_TRUE(config.getDeepStorageDir().is_absolute());
-            EXPECT_TRUE(config.getLowStorageDir().is_absolute());
+            EXPECT_TRUE(config.getDeepStorageDirPath().is_absolute());
+            EXPECT_TRUE(config.getLowStorageDirPath().is_absolute());
             EXPECT_TRUE(config.getMetadataFilePath().is_absolute());
-            EXPECT_EQ(config.getDeepStorageDir(), utils::executableDirectory() / root["deep_storage_dir"].asString());
-            EXPECT_EQ(config.getLowStorageDir(), utils::executableDirectory() / root["low_storage_dir"].asString());
+            EXPECT_EQ(config.getDeepStorageDirPath(), utils::executableDirectory() / root["deep_storage_dir"].asString());
+            EXPECT_EQ(config.getLowStorageDirPath(), utils::executableDirectory() / root["low_storage_dir"].asString());
             EXPECT_EQ(config.getMetadataFilePath(), utils::executableDirectory() / root["metadata_file"].asString());
             EXPECT_EQ(config.getBundleFormat(), root["bundle_format"].asInt());
         }
@@ -245,15 +245,15 @@ TEST_F(ConfigTests, FindsConfigurationBesideExecutableAfterWorkingDirectoryChang
 TEST_F(ConfigTests, LoadedPathsRemainAbsoluteAfterWorkingDirectoryChanges)
 {
     const auto &config = server::Config::GetInstance();
-    const auto deepStorageDir = config.getDeepStorageDir();
-    const auto lowStorageDir = config.getLowStorageDir();
+    const auto deepStorageDir = config.getDeepStorageDirPath();
+    const auto lowStorageDir = config.getLowStorageDirPath();
     const auto metadataFilePath = config.getMetadataFilePath();
 
     prepareWorkingDirectory();
     ASSERT_FALSE(::testing::Test::HasFatalFailure());
 
-    EXPECT_EQ(config.getDeepStorageDir(), deepStorageDir);
-    EXPECT_EQ(config.getLowStorageDir(), lowStorageDir);
+    EXPECT_EQ(config.getDeepStorageDirPath(), deepStorageDir);
+    EXPECT_EQ(config.getLowStorageDirPath(), lowStorageDir);
     EXPECT_EQ(config.getMetadataFilePath(), metadataFilePath);
     ExpectConfig(validConfig());
 }

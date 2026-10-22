@@ -53,8 +53,8 @@ void Config::readConfig()
     m_serverPort = root["server_port"].asInt();
     m_downloadPrefix = downloadPrefix;
     // 配置中的相对路径以可执行文件所在目录为基准，绝对路径直接使用。
-    m_deepStorageDir = executableDir / root["deep_storage_dir"].asString();
-    m_lowStorageDir = executableDir / root["low_storage_dir"].asString();
+    m_deepStorageDirPath = executableDir / root["deep_storage_dir"].asString();
+    m_lowStorageDirPath = executableDir / root["low_storage_dir"].asString();
     m_metadataFilePath = executableDir / root["metadata_file"].asString();
     m_bundleFormat = root["bundle_format"].asInt();
 }
