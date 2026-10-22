@@ -81,8 +81,8 @@ namespace
             root["server_ip"] = "0.0.0.0";
             root["server_port"] = 9090;
             root["download_prefix"] = "/files/";
-            root["deep_storage_dir"] = "./data/compressed/";
-            root["low_storage_dir"] = "./data/normal/";
+            root["compressed_files_dir"] = "./updated-data/compressed/";
+            root["uncompressed_files_dir"] = "./updated-data/uncompressed/";
             root["metadata_file"] = "./data/updated-metadata.json";
             root["bundle_format"] = bundle::RAW;
             return root;
@@ -120,11 +120,11 @@ namespace
             EXPECT_EQ(config.getServerIp(), root["server_ip"].asString());
             EXPECT_EQ(config.getServerPort(), root["server_port"].asInt());
             EXPECT_EQ(config.getDownloadPrefix(), root["download_prefix"].asString());
-            EXPECT_TRUE(config.getDeepStorageDirPath().is_absolute());
-            EXPECT_TRUE(config.getLowStorageDirPath().is_absolute());
+            EXPECT_TRUE(config.getCompressedFilesDirPath().is_absolute());
+            EXPECT_TRUE(config.getUncompressedFilesDirPath().is_absolute());
             EXPECT_TRUE(config.getMetadataFilePath().is_absolute());
-            EXPECT_EQ(config.getDeepStorageDirPath(), utils::executableDirectory() / root["deep_storage_dir"].asString());
-            EXPECT_EQ(config.getLowStorageDirPath(), utils::executableDirectory() / root["low_storage_dir"].asString());
+            EXPECT_EQ(config.getCompressedFilesDirPath(), utils::executableDirectory() / root["compressed_files_dir"].asString());
+            EXPECT_EQ(config.getUncompressedFilesDirPath(), utils::executableDirectory() / root["uncompressed_files_dir"].asString());
             EXPECT_EQ(config.getMetadataFilePath(), utils::executableDirectory() / root["metadata_file"].asString());
             EXPECT_EQ(config.getBundleFormat(), root["bundle_format"].asInt());
         }
@@ -209,7 +209,7 @@ TEST_F(ConfigInitializationDeathTest, RetriesInitializationAfterRepeatedValidati
 {
     ASSERT_EXIT(
         {
-            for (const char *field : {"server_ip", "server_port", "download_prefix", "deep_storage_dir", "low_storage_dir", "metadata_file", "bundle_format"})
+            for (const char *field : {"server_ip", "server_port", "download_prefix", "compressed_files_dir", "uncompressed_files_dir", "metadata_file", "bundle_format"})
             {
                 SCOPED_TRACE(field);
                 auto root = updatedConfig();
@@ -245,15 +245,15 @@ TEST_F(ConfigTests, FindsConfigurationBesideExecutableAfterWorkingDirectoryChang
 TEST_F(ConfigTests, LoadedPathsRemainAbsoluteAfterWorkingDirectoryChanges)
 {
     const auto &config = server::Config::GetInstance();
-    const auto deepStorageDir = config.getDeepStorageDirPath();
-    const auto lowStorageDir = config.getLowStorageDirPath();
+    const auto compressedFilesDirPath = config.getCompressedFilesDirPath();
+    const auto uncompressedFilesDirPath = config.getUncompressedFilesDirPath();
     const auto metadataFilePath = config.getMetadataFilePath();
 
     prepareWorkingDirectory();
     ASSERT_FALSE(::testing::Test::HasFatalFailure());
 
-    EXPECT_EQ(config.getDeepStorageDirPath(), deepStorageDir);
-    EXPECT_EQ(config.getLowStorageDirPath(), lowStorageDir);
+    EXPECT_EQ(config.getCompressedFilesDirPath(), compressedFilesDirPath);
+    EXPECT_EQ(config.getUncompressedFilesDirPath(), uncompressedFilesDirPath);
     EXPECT_EQ(config.getMetadataFilePath(), metadataFilePath);
     ExpectConfig(validConfig());
 }
@@ -294,7 +294,7 @@ TEST_F(ConfigTests, RejectsMalformedOrNonObjectDocuments)
 
 TEST_F(ConfigTests, RejectsMissingFieldsBeforeUpdatingMembers)
 {
-    for (const char *field : {"server_ip", "server_port", "download_prefix", "deep_storage_dir", "low_storage_dir", "metadata_file", "bundle_format"})
+    for (const char *field : {"server_ip", "server_port", "download_prefix", "compressed_files_dir", "uncompressed_files_dir", "metadata_file", "bundle_format"})
     {
         SCOPED_TRACE(field);
         auto root = updatedConfig();
@@ -308,7 +308,7 @@ TEST_F(ConfigTests, RejectsMissingFieldsBeforeUpdatingMembers)
 
 TEST_F(ConfigTests, RejectsEmptyOrNonStringFields)
 {
-    for (const char *field : {"server_ip", "download_prefix", "deep_storage_dir", "low_storage_dir", "metadata_file"})
+    for (const char *field : {"server_ip", "download_prefix", "compressed_files_dir", "uncompressed_files_dir", "metadata_file"})
     {
         SCOPED_TRACE(field);
         for (const auto &value : {Json::Value(), Json::Value(""), Json::Value(42), Json::Value(1.5), Json::Value(false), Json::Value(true), Json::Value(Json::arrayValue), Json::Value(Json::objectValue)})
@@ -462,8 +462,8 @@ TEST_F(ConfigTests, PreservesUnicodeWhileResolvingFilePaths)
     auto root = updatedConfig();
     root["server_ip"] = "::1";
     root["download_prefix"] = u8"/云存储/";
-    root["deep_storage_dir"] = u8"/srv/cloud/深度 存储/";
-    root["low_storage_dir"] = u8"../普通 存储/";
+    root["compressed_files_dir"] = u8"/srv/cloud/压缩 文件/";
+    root["uncompressed_files_dir"] = u8"../未压缩 文件/";
     root["metadata_file"] = u8"./元数据/文件 \"信息\".json";
     writeConfig(root);
 
@@ -547,7 +547,7 @@ TEST_F(ConfigTests, CanReloadAfterMalformedJsonIsFixed)
 TEST_F(ConfigTests, CanReloadAfterValidationFailuresWithoutPartialUpdates)
 {
     auto &config = server::Config::GetInstance();
-    for (const char *field : {"server_ip", "server_port", "download_prefix", "deep_storage_dir", "low_storage_dir", "metadata_file", "bundle_format"})
+    for (const char *field : {"server_ip", "server_port", "download_prefix", "compressed_files_dir", "uncompressed_files_dir", "metadata_file", "bundle_format"})
     {
         SCOPED_TRACE(field);
         auto invalid = updatedConfig();

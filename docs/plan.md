@@ -55,7 +55,7 @@ flowchart LR
 
 上传的文件由存储模块保存；dlog 记录上传、下载、压缩过程中的状态、耗时和错误。
 
-沿用参考项目的存储语义：**浅度存储（普通存储）直接保存文件，深度存储压缩后保存文件**，存储类型由上传请求指定。这里的“深度”指压缩存储，不涉及远端对象存储或自动冷热分层。[参考上传与下载实现](https://github.com/youngyangyang04/Kama-AsynLogSystem-CloudStorage/blob/main/src/server/Service.hpp)
+沿用参考项目的存储语义：**未压缩存储直接保存文件，压缩存储先压缩再保存文件**，存储类型由上传请求指定。参考项目分别称为“浅度存储”和“深度存储”，本项目使用 `uncompressed` 和 `compressed` 明确表示文件是否经过服务端压缩。两个文件目录的配置键分别为 `uncompressed_files_dir` 和 `compressed_files_dir`。[参考上传与下载实现](https://github.com/youngyangyang04/Kama-AsynLogSystem-CloudStorage/blob/main/src/server/Service.hpp)
 
 模块按需逐步创建，以下位置和接口均为实施建议。
 
@@ -266,7 +266,7 @@ xmake test -y tests/core
 
 接口约定：`insert(info)` 只新增记录，URL 已存在时抛出 `std::invalid_argument`；`update(info)` 只更新已有记录，URL 不存在时抛出 `std::out_of_range`。两者修改后都持久化，保存失败时传播异常。私有函数 `insertWithoutPersist(info)` 只向内存表新增记录，URL 重复时同样报错，供 `loadFromDisk()` 加载历史元数据时调用。
 
-路径约定：配置文件、存储文件和元数据持久化文件的相对路径都以可执行文件所在目录为基准，绝对路径按原路径访问。`config/server.conf` 通过 `deep_storage_dir`、`low_storage_dir` 和 `metadata_file` 提供相对路径，`Config` 构造时通过 `readConfig()` 将它们解析为绝对路径，再次读取配置时沿用相同规则。`FileMetadata::FromFile()` 始终保存解析后的绝对路径；持久化字段 `absolute_file_path` 保存文件绝对路径，`loadFromDisk()` 直接恢复。`insert()`、`update()` 按 `FileMetadata` 已保存绝对路径的约定使用元数据。`DataManager` 构造时直接保存 `Config::getMetadataFilePath()` 返回的绝对路径，加载和保存使用同一路径，不受工作目录变化影响。
+路径约定：配置文件、存储文件和元数据持久化文件的相对路径都以可执行文件所在目录为基准，绝对路径按原路径访问。`config/server.conf` 通过 `compressed_files_dir`、`uncompressed_files_dir` 和 `metadata_file` 提供相对路径，`Config` 构造时通过 `readConfig()` 将它们解析为绝对路径，再次读取配置时沿用相同规则。`FileMetadata::FromFile()` 始终保存解析后的绝对路径；持久化字段 `absolute_file_path` 保存文件绝对路径，`loadFromDisk()` 直接恢复。`insert()`、`update()` 按 `FileMetadata` 已保存绝对路径的约定使用元数据。`DataManager` 构造时直接保存 `Config::getMetadataFilePath()` 返回的绝对路径，加载和保存使用同一路径，不受工作目录变化影响。
 
 `Config` 中的三个文件系统路径、`FileMetadata::m_absoluteFilePath`、`DataManager::m_metadataFilePath` 和相关路径入参统一使用 `std::filesystem::path`。服务端固定运行于 Linux，文件名和 JSON 路径统一约定使用 UTF-8；读入时直接将字符串赋给 `path`，写出时调用 `string()`。`getOneByFilePath()` 将查询路径按可执行文件目录解析为绝对路径后，直接与记录中的绝对路径比较。暂不处理 `.`、`..` 等写法差异。该查询不要求实际文件存在，也不解析符号链接。
 

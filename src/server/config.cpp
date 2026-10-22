@@ -34,7 +34,7 @@ void Config::readConfig()
     if (!root.isObject()) throw std::invalid_argument("Config::readConfig(): root must be an object");
 
     // 校验字段。
-    for (const char *field : {"server_ip", "download_prefix", "deep_storage_dir", "low_storage_dir", "metadata_file"})
+    for (const char *field : {"server_ip", "download_prefix", "compressed_files_dir", "uncompressed_files_dir", "metadata_file"})
     {
         if (!root[field].isString() || root[field].asString().empty()) throw std::invalid_argument(std::string("Config::readConfig(): '") + field + "' must be a non-empty string");
     }
@@ -53,8 +53,8 @@ void Config::readConfig()
     m_serverPort = root["server_port"].asInt();
     m_downloadPrefix = downloadPrefix;
     // 配置中的相对路径以可执行文件所在目录为基准，绝对路径直接使用。
-    m_deepStorageDirPath = executableDir / root["deep_storage_dir"].asString();
-    m_lowStorageDirPath = executableDir / root["low_storage_dir"].asString();
+    m_compressedFilesDirPath = executableDir / root["compressed_files_dir"].asString();
+    m_uncompressedFilesDirPath = executableDir / root["uncompressed_files_dir"].asString();
     m_metadataFilePath = executableDir / root["metadata_file"].asString();
     m_bundleFormat = root["bundle_format"].asInt();
 }

@@ -32,9 +32,9 @@ public:
 
     std::string getDownloadPrefix() const { return m_downloadPrefix; }
 
-    std::filesystem::path getDeepStorageDirPath() const { return m_deepStorageDirPath; }
+    std::filesystem::path getCompressedFilesDirPath() const { return m_compressedFilesDirPath; }
 
-    std::filesystem::path getLowStorageDirPath() const { return m_lowStorageDirPath; }
+    std::filesystem::path getUncompressedFilesDirPath() const { return m_uncompressedFilesDirPath; }
 
     std::filesystem::path getMetadataFilePath() const { return m_metadataFilePath; }
 
@@ -55,11 +55,11 @@ private:
     // 下载 URL 前缀。
     std::string m_downloadPrefix;
 
-    // 深度存储文件的存储目录，保存为绝对路径。
-    std::filesystem::path m_deepStorageDirPath;
+    // 经服务端压缩后的文件所在目录的绝对路径。
+    std::filesystem::path m_compressedFilesDirPath;
 
-    // 浅度存储文件的存储目录，保存为绝对路径。
-    std::filesystem::path m_lowStorageDirPath;
+    // 未经服务端压缩的文件所在目录的绝对路径。
+    std::filesystem::path m_uncompressedFilesDirPath;
 
     // 文件元数据持久化文件的绝对路径。
     std::filesystem::path m_metadataFilePath;
