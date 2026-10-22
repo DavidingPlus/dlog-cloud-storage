@@ -47,7 +47,7 @@ namespace
             }
             ASSERT_FALSE(m_directory.empty()) << "Cannot create an isolated temporary directory";
 
-            m_filePath = m_directory / "metadata" / "storage.json";
+            m_filePath = m_directory / "data" / "metadata.json";
             fs::create_directory(m_filePath.parent_path());
             writeRecords({});
             configureMetadataFile(m_filePath);
@@ -447,7 +447,7 @@ TEST_F(DataManagerTests, ConstructorCanBeRetriedAfterInvalidRecord)
 
 TEST_F(DataManagerTests, RelativeMetadataPathUsesExecutableDirectoryForLoadingAndPersistence)
 {
-    const auto relativeFile = m_directory.filename() / "metadata" / "storage.json";
+    const auto relativeFile = m_directory.filename() / "data" / "metadata.json";
     configureMetadataFile(relativeFile);
     const auto info = MakeInfo("report.txt");
     writeRecords({info});

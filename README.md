@@ -25,7 +25,7 @@ xmake test
 
 Linux 服务端的 `Config::readConfig()` 从可执行文件目录下的 `config/server.conf` 读取配置，不受工作目录影响。赋值前检查根节点、必填字符串、端口范围、压缩格式和下载前缀，校验失败时抛出 `std::invalid_argument`；文件读取和 JSON 解析失败时沿用工具类异常。对应测试位于 `test/server/config_test.cpp`，可用 `xmake test tests/server` 执行。
 
-配置中的 `deep_storage_dir`、`low_storage_dir` 和 `metadata_file` 提供相对路径，`Config` 构造时通过 `readConfig()` 将它们按可执行文件所在目录解析为绝对路径，以 `std::filesystem::path` 保存和返回；再次读取配置时沿用相同规则。显式配置的绝对路径直接使用。`DataManager` 通过 `getMetadataFilePath()` 获取元数据持久化文件路径。`download_prefix` 保持为路由字符串。
+配置中的 `deep_storage_dir`、`low_storage_dir` 和 `metadata_file` 提供相对路径，`Config` 构造时通过 `readConfig()` 将它们按可执行文件所在目录解析为绝对路径，以 `std::filesystem::path` 保存和返回；再次读取配置时沿用相同规则。显式配置的绝对路径直接使用。`metadata_file` 默认为 `./data/metadata.json`，`DataManager` 通过 `getMetadataFilePath()` 获取元数据持久化文件路径。`download_prefix` 保持为路由字符串。
 
 Config 测试覆盖首次构造与单例复用、七个字段读取和重载、工作目录中存在另一份配置时的定位、文件缺失和目录占位、读取权限、JSON 错误、逐字段缺失及类型错误、32/64 位数值越界、端口边界、全部支持的压缩格式、下载前缀、Unicode 与路径解析、切换工作目录后路径保持不变、额外字段，以及各种失败后的旧值保留和恢复加载。首次构造及失败重试通过 GTest 的 `threadsafe` 进程测试执行，保证单例尚未初始化，且不依赖测试顺序。测试会恢复原配置、文件权限和工作目录，并清理临时文件；当前用户能绕过读取权限时跳过对应权限用例。数值类型沿用 JsonCpp 的 `isInt()` 语义，`8081.0` 等能表示为 `int` 的整数值也会被接受。
 

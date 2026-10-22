@@ -83,7 +83,7 @@ namespace
             root["download_prefix"] = "/files/";
             root["deep_storage_dir"] = "./data/compressed/";
             root["low_storage_dir"] = "./data/normal/";
-            root["metadata_file"] = "./data/metadata.json";
+            root["metadata_file"] = "./data/updated-metadata.json";
             root["bundle_format"] = bundle::RAW;
             return root;
         }
