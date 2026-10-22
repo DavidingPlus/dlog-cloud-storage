@@ -14,15 +14,16 @@
 
 | 构建目标 | 职责 |
 | --- | --- |
-| `dlog-cloud-storage-static` | 内部静态库，编译 `src/` 下除 `main.cpp` 外的源码，供主程序、单元测试和开发示例共用 |
-| `dlog-cloud-storage` | 可执行程序，编译 `src/main.cpp` 并链接内部静态库 |
-| `tests` | 沿用原模板的 GoogleTest 分组，链接内部静态库测试业务代码 |
+| `dlog-cloud-storage-utils-static` | 内部工具静态库，编译 `src/utils/`，供 Windows、Linux 的单元测试和开发示例共用 |
+| `dlog-cloud-storage-server-static` | Linux 服务端内部静态库，编译 `src/server/` 下除 `main.cpp` 外的源码，并依赖工具静态库 |
+| `dlog-cloud-storage-server` | Linux 服务端可执行程序，编译 `src/server/main.cpp` 并链接服务端静态库 |
+| `tests` | 沿用现有 GoogleTest 分组，Linux 下链接服务端静态库测试业务代码 |
 
 内部静态库只参与项目构建，不安装到应用发布目录。对外发布可执行程序及其运行资源，公共头文件导出和 xmake-repo 库分发流程仍然不需要。
 
 在本机启动服务，通过浏览器上传普通文件、查看文件列表、下载原文件；重启服务后仍能查看和下载此前上传的文件。上传、下载、错误和正常关闭过程使用现有 dlog 记录日志。
 
-默认先在当前 Windows 环境跑通，再验证 Linux。开发期间绑定 `127.0.0.1`，使用本地浏览器即可验证。
+服务端固定运行于 Linux，通用工具继续支持 Windows 和 Linux。开发期间绑定 `127.0.0.1`，使用本地浏览器即可验证。
 
 ## 2. 参考文档与依赖
 
@@ -37,7 +38,7 @@
 | `8.后续优化.md` | 普通存储完成后，再选择需要的扩展 |
 | `【补充】客户端扩展.md` | 后续需要自动扫描和上传客户端文件时再实施 |
 
-HTTP 服务和 JSON 处理默认沿用参考项目的 libevent、JsonCpp。压缩阶段再验证参考项目使用的 bundle 及 LZIP 格式。依赖版本以实际安装、编译和运行验证的结果为准。
+HTTP 服务和 JSON 处理沿用参考项目的 libevent、JsonCpp，文件名通过 cpp-base64 编解码，压缩处理使用 bundle。当前已引入 JsonCpp、bundle 和 cpp-base64，libevent 与 dlog 的应用侧接入待完成。压缩阶段再验证通过 HTTP 上传、压缩、下载解压的完整流程。依赖版本以实际安装、编译和运行验证的结果为准。
 
 资料：[libevent HTTP 服务说明](https://libevent.org/libevent-book/Ref10_http_server.html)、[JsonCpp](https://github.com/open-source-parsers/jsoncpp)、[bundle](https://github.com/r-lyeh-archived/bundle)。
 
@@ -55,36 +56,39 @@ flowchart LR
 
 上传的文件由存储模块保存；dlog 记录上传、下载、压缩过程中的状态、耗时和错误。
 
-沿用参考项目的存储语义：**未压缩存储直接保存文件，压缩存储先压缩再保存文件**，存储类型由上传请求指定。参考项目分别称为“浅度存储”和“深度存储”，本项目使用 `uncompressed` 和 `compressed` 明确表示文件是否经过服务端压缩。两个文件目录的配置键分别为 `uncompressed_files_dir` 和 `compressed_files_dir`。[参考上传与下载实现](https://github.com/youngyangyang04/Kama-AsynLogSystem-CloudStorage/blob/main/src/server/Service.hpp)
+沿用参考项目的存储语义：**未压缩存储直接保存文件，压缩存储由服务端压缩处理后保存文件**。客户端通过 `StorageType` 请求头选择存储策略，本项目统一使用 `uncompressed` 和 `compressed`，分别对应配置中的 `uncompressed_files_dir` 和 `compressed_files_dir`。参考项目使用的 `low`、`deep` 取值由上述明确语义的取值替代。[参考上传与下载实现](https://github.com/youngyangyang04/Kama-AsynLogSystem-CloudStorage/blob/main/src/server/Service.hpp)
+
+两种存储方式的上传请求体都为原始文件字节；压缩格式由服务端配置 `bundle_format` 决定，下载统一返回原始内容。
 
 模块按需逐步创建，以下位置和接口均为实施建议。
 
 | 建议位置 | 职责 |
 | --- | --- |
-| `src/main.cpp` | 按顺序初始化配置、日志、元数据和服务；完成退出清理 |
-| `src/core/applogging.h/.cpp` | 封装应用侧 `InitLogging()`、`ShutdownLogging()`，管理异步后端的生命周期 |
-| `src/core/appconfig.h/.cpp` | 保存并加载服务地址、端口、数据目录、日志路径和文件大小限制 |
-| `src/storage/fileops.h/.cpp` | 创建目录、校验文件名、二进制读写、处理本次上传的临时文件 |
-| `src/storage/storageinfo.h` | 定义一份文件元数据 |
-| `src/storage/datamanager.h/.cpp` | 内存查询、JSON 持久化和启动恢复 |
-| `src/http/service.h/.cpp` | libevent 生命周期、路由和请求处理 |
+| `src/server/main.cpp` | 按顺序初始化配置、日志、数据目录、元数据和服务；完成退出清理 |
+| `src/server/applogging.h/.cpp` | 按需封装应用侧 `InitLogging()`、`ShutdownLogging()`，管理异步后端的生命周期 |
+| `src/server/config.h/.cpp` | 已实现服务地址、端口、下载前缀、文件目录、元数据路径和压缩格式配置 |
+| `src/utils/fileutil.h/.cpp`、`src/utils/common.h/.cpp` | 已实现路径定位、二进制读写、目录操作、压缩解压和 URL 解码；文件名校验等按需补充 |
+| `src/server/datamanager.h/.cpp` | 已实现 `FileMetadata`、内存查询、JSON 持久化和启动恢复 |
+| `src/server/service.h/.cpp` | 待实现 libevent 生命周期、路由和请求处理，以及上传存储类型枚举 |
 | `web/index.html` | 文件选择、上传、列表和下载链接 |
-| `config/storage.json` | 运行配置，区别于 XMake 生成的编译配置头文件 |
+| `config/server.conf` | 已有 JSON 运行配置，区别于 XMake 生成的编译配置头文件 |
 
-第一版使用单个 HTTP 事件循环，在 HTTP 回调中同步完成文件处理。这样元数据操作可以先使用普通容器；后续引入业务工作线程时，再统一设计锁和请求生命周期。
+第一版使用单个 HTTP 事件循环，在 HTTP 回调中同步完成文件处理。继续使用当前 `DataManager` 的内存表和读写锁；后续引入业务工作线程时，再统一设计文件操作、持久化和请求生命周期之间的并发关系。
 
-最小文件元数据建议为：
+当前 `FileMetadata` 与 JSON 持久化字段为：
 
-| 字段 | 约定 |
-| --- | --- |
-| `filename` | 经校验的原始文件名，作为第一版的查询键 |
-| `storageType` | `normal`；压缩阶段再增加 `compressed` |
-| `filePath` | 服务端生成的、相对于数据根目录的存储路径 |
-| `originalSize` | 原文件字节数，使用 64 位无符号整数 |
+| C++ 字段 | JSON 字段 | 约定 |
+| --- | --- | --- |
+| `m_mtime` | `mtime` | 存储文件的修改时间，持久化文件系统时钟的原始计数 |
+| `m_fileSize` | `file_size` | 实际存储文件的字节数，JSON 使用 64 位无符号整数 |
+| `m_absoluteFilePath` | `absolute_file_path` | 服务端生成的文件绝对路径 |
+| `m_url` | `url` | 下载前缀加原始文件名，作为内存表的唯一键 |
 
-下载 URL 根据文件名生成，不必重复持久化。访问时间、修改时间等字段可以在有实际用途时增加。
+内部 `m_url` 保存未经过 URL 百分号编码的资源路径；生成供浏览器访问的下载链接时再编码，接收下载请求时按路径规则解码一次。列表中的文件名从存储路径提取，存储类型根据文件所属目录与配置目录的对应关系判断，不按路径中的 `low`、`deep` 等子串推断。
 
-第一版同名上传返回冲突，保留已有文件。名称判断还要考虑当前文件系统的大小写规则。文件名只能表示一个文件，拒绝目录分隔符、绝对路径、`.`、`..`、控制字符及当前平台不支持的名称。文件路径统一由服务端拼接。
+压缩文件的 `m_fileSize` 表示压缩处理后的磁盘文件大小，页面显示为“存储大小”。若后续需要展示原始大小，再扩展元数据并处理旧 JSON 的加载兼容。`m_mtime` 使用 `std::filesystem::file_time_type`，展示为日历时间前需要转换时钟，不能直接当作 `time_t` 传给 `std::ctime()`。
+
+第一版同名上传返回冲突，保留已有文件。由于下载 URL 仅由前缀和文件名组成，两种存储策略之间的同名文件也视为冲突。名称判断还要考虑当前文件系统的大小写规则。文件名只能表示一个文件，拒绝目录分隔符、绝对路径、`.`、`..`、控制字符及当前平台不支持的名称。文件路径统一由服务端拼接。
 
 ## 4. dlog 能力与接入生命周期
 
@@ -125,16 +129,82 @@ DLOG_INFO() << "upload finished, file=" << filename
 
 ## 5. 第一版 HTTP 协议
 
-以下协议保留参考项目的上传、下载和展示功能，具体字段是本项目的新约定。
+以下协议保留参考项目的上传、下载和展示功能。上传沿用参考项目的自定义请求头方式，存储类型取值统一为本项目的明确语义；列表沿用本计划的独立 JSON 接口。
 
 | 方法与路径 | 请求和响应 |
 | --- | --- |
 | `GET /` | 返回页面 |
-| `POST /upload?name=<URL编码的文件名>&type=normal` | 请求体为原始文件字节，类型为 `application/octet-stream`；成功返回 201 和结果 JSON |
+| `POST /upload` | 通过 `FileName` 和 `StorageType` 请求头传递上传参数；请求体为原始文件字节，类型为 `application/octet-stream`；成功返回 201 和结果 JSON |
 | `GET /files` | 返回文件列表 JSON |
 | `GET /download/<URL编码的文件名>` | 返回原文件内容，成功状态为 200 |
 
-失败使用 400（参数、文件名或类型无效）、404（文件或路径不存在）、405（方法不支持）、409（同名冲突）、413（文件过大）、500（内部读写失败）。第一版只接受 `type=normal`，压缩功能完成后再接受 `type=compressed`。
+下载路径中的 `/download/` 是默认配置示例，实现时使用 `Config::getDownloadPrefix()`。
+
+### 上传请求头与存储策略
+
+| 请求头 | 约定 |
+| --- | --- |
+| `Content-Type` | `application/octet-stream`，请求体直接存放原始文件字节 |
+| `FileName` | 必填；将原始文件名的 UTF-8 字节按标准 Base64 编码。服务端解码后校验文件名 |
+| `StorageType` | 必填；取值统一使用小写，仅接受 `uncompressed` 或 `compressed` |
+
+| `StorageType` 取值 | 服务端行为 | 对应配置 |
+| --- | --- | --- |
+| `uncompressed` | 直接保存原始文件字节 | `uncompressed_files_dir` |
+| `compressed` | 使用配置中的 `bundle_format` 压缩处理后保存 | `compressed_files_dir` |
+
+未压缩存储的请求结构如下，`YS50eHQ=` 是文件名 `a.txt` 的 Base64 编码；实际客户端还需按 HTTP 协议完成请求体长度等传输处理：
+
+```http
+POST /upload HTTP/1.1
+Host: localhost:8081
+Content-Type: application/octet-stream
+FileName: YS50eHQ=
+StorageType: uncompressed
+
+<原始文件字节>
+```
+
+压缩存储只需将对应请求头改为 `StorageType: compressed`，请求体仍为原始文件字节。`StorageType` 描述服务端采用的存储策略，客户端无需预先压缩，也不指定压缩算法。bundle 对不适合压缩的内容可能保留原始字节，因此选择 `compressed` 不保证磁盘文件一定更小。
+
+后端解析请求头后立即转换成枚举，业务逻辑按枚举分支处理：
+
+```cpp
+enum class StorageType
+{
+    Uncompressed,
+    Compressed
+};
+```
+
+`FileName` 或 `StorageType` 缺失、空值、文件名 Base64 编码非法或解码后的文件名不合法，以及未知存储类型，均返回 `400 Bad Request`。第一阶段只实现 `StorageType: uncompressed`；压缩功能完成前收到 `compressed` 时也返回 400，明确说明当前尚不支持该策略。第二阶段完成后接受两种策略。
+
+其他失败使用 404（文件或路径不存在）、405（方法不支持）、409（同名冲突）、413（文件过大）、500（内部读写失败）。上传参数统一从请求头读取。
+
+### Service 复现设计
+
+在 `src/server/service.h/.cpp` 中实现 `server::Service`，复用现有配置、文件工具和元数据管理。当前类骨架先保留参考实现的函数名、返回类型、静态函数划分和回调参数；参考项目的 `StorageInfo` 类型适配为本项目已有的 `FileMetadata`。后续接口调整另行决定。
+
+| 建议接口 | 职责 |
+| --- | --- |
+| `Service()` | 无参构造，读取监听地址、端口和下载前缀 |
+| `bool RunModule()` | 创建监听和事件循环，返回运行结果 |
+| `static GenHandler(evhttp_request *, void *)` | 通用请求回调，解析路径并分发请求 |
+| `static Upload(evhttp_request *, void *)` | 解析请求头和正文，保存文件并提交元数据 |
+| `static TimetoStr(std::filesystem::file_time_type)` | 直接接收文件修改时间，在函数内部完成日历时间转换和格式化 |
+| `static generateModernFileList(const std::vector<FileMetadata> &)` | 生成文件列表 HTML |
+| `static formatSize(std::uint64_t)` | 格式化文件大小 |
+| `static ListShow(evhttp_request *, void *)` | 查询元数据并返回包含文件列表的 HTML 页面 |
+| `static GetETag(const FileMetadata &)` | 根据元数据生成 ETag |
+| `static Download(evhttp_request *, void *)` | 按请求路径查找元数据，读取或解压后返回原始字节 |
+
+请求处理函数统一保留参考实现的 `(evhttp_request *, void *)` 参数，不预先拆分实例分发函数或注入 `DataManager`。`GetETag()` 先保留接口，断点下载仍按第 7 节后续实施。当前骨架中的 `RunModule()` 返回 false，返回字符串的辅助函数返回空字符串，其余业务函数为空实现。
+
+本节骨架先沿用参考实现的 `ListShow()` 页面生成职责；上方协议和第 6 节中的独立 `/files` 接口作为原计划保留，后续确定是否拆分时再统一调整。
+
+创建 `event_base`、`evhttp` 和信号事件后检查返回值，以 RAII 管理资源；释放 HTTP 对象和信号事件后再释放 `event_base`。监听地址和端口使用 `Config`，先匹配 `/`、`/upload`、`/files` 等固定路由，再匹配配置中的下载前缀。请求路径解码一次后向下传递，避免各处理函数重复解码；已知路径的方法不匹配返回 405，未知路径返回 404。
+
+启动阶段按“配置与日志 → 数据目录及缺失的元数据文件初始化 → `DataManager` → `Service::RunModule()`”组织。元数据访问方式、回调异常处理和停止流程在业务实现时补齐，当前不额外增加类接口；退出后按第 4 节关闭日志。
 
 ## 6. 分阶段实施
 
@@ -142,7 +212,7 @@ DLOG_INFO() << "upload finished, file=" << filename
 
 #### 第 1 步：接入 dlog
 
-1. 注册已确认可用的自有 XMake 包仓库，将 dlog 加入当前 `package_dependencies.common`。
+1. 使用已注册的自有 XMake 包仓库，将 dlog 加入 `package_dependencies.linux`，供 Linux 服务端接入。
 2. 在应用侧封装 `InitLogging()`、`ShutdownLogging()`，按第 4 节管理异步后端、输出回调和退出顺序。
 3. 普通错误使用 `DLOG_ERROR()`；需要退出时由应用执行正常清理。
 
@@ -150,8 +220,8 @@ DLOG_INFO() << "upload finished, file=" << filename
 
 #### 第 2 步：运行一个最小 HTTP 服务
 
-1. 将 libevent 加入 XMake 依赖。
-2. 实现事件环境创建、HTTP 对象创建、监听、回调注册、事件循环和资源释放。
+1. 将 libevent 加入 `package_dependencies.linux`，在 `src/server/service.h/.cpp` 中实现 `Service`。
+2. 按第 5 节的职责划分实现事件环境创建、HTTP 对象创建、配置地址监听、回调注册、事件循环和资源释放。
 3. 先让 `GET /` 返回一段固定文本，未知路径返回 404。
 4. 提供能够退出事件循环并回到 `main()` 清理的正常停止方式；初始化失败时释放已创建的资源。
 
@@ -159,8 +229,8 @@ DLOG_INFO() << "upload finished, file=" << filename
 
 #### 第 3 步：配置与文件工具
 
-1. 加入 JsonCpp，定义 `AppConfig`；读取 `config/storage.json`，设置可用默认值。
-2. 配置服务地址、端口、数据根目录、元数据文件、页面路径、日志路径和上传大小限制。
+1. 复用已实现的 `Config`、JsonCpp 和 `config/server.conf`，按现有字段校验与路径解析规则读取配置。
+2. 复用服务地址、端口、下载前缀、两个存储目录、元数据文件和压缩格式；页面路径、日志路径和上传大小限制按接入需求补充。
 3. 业务文件的相对路径统一以可执行文件所在目录为基准；创建所需目录。
 4. 实现二进制读写和文件名校验。先限制小文件，例如最大 16 MiB，允许合法的零字节文件。
 
@@ -168,45 +238,47 @@ DLOG_INFO() << "upload finished, file=" << filename
 
 #### 第 4 步：元数据与本地存储闭环
 
-1. 定义 `FileMetadata`，实现内存中的按名称查询和列表查询。
-2. 实现 JSON 加载和保存；首次运行没有元数据文件时使用空列表，文件格式错误时报告错误。
+1. 复用 `FileMetadata` 和 `DataManager` 的按 URL 查询、按文件路径查询和列表查询。
+2. 复用 JSON 加载和保存；启动准备阶段创建存储目录及元数据父目录，仅在元数据文件缺失时写入 `[]`，然后构造 `DataManager`。已有文件读取或解析失败时报告错误。
 3. 在本地调用中跑通“保存普通文件 → 持久化元数据 → 查询 → 读取文件”。
 4. 上传成功的条件是文件保存和元数据保存都成功；元数据保存失败时，不发布成功条目，清理本次新建文件。
 
 当前阶段继续采用参考实现的持久化模型：启动时全量加载 JSON 元数据到内存表，运行时查询内存表，插入或更新后同步保存整张表。按需读取和增量持久化列入[元数据存储优化](#元数据存储优化)，后续再评估。
 
-元数据先写临时文件，成功后替换正式文件，再更新内存状态。Windows 和 Linux 的文件替换方式需分别确认；失败时保留上一份正式元数据。这里处理的是正常运行中的失败，第一版不承诺突然断电时的事务恢复。
+HTTP 上传接入前需要补齐失败状态处理：当前 `DataManager::insert()`、`update()` 先修改内存，再直接覆盖 JSON 文件，保存失败会传播异常但不会回滚内存，现有测试已覆盖这个行为。要满足本步骤的上传验收，应在保留全量 JSON 持久化模型的前提下，改为将候选元数据写入同目录临时文件，成功替换正式文件后再提交内存状态；失败时保留原有内存表和正式元数据，并同步更新相关测试。仅在 `Service` 中捕获异常、删除上传文件，无法消除当前内存表中的新增记录。
+
+服务端运行于 Linux，需验证临时文件替换和失败清理。这里处理的是正常运行中的失败，第一版不承诺突然断电时的事务恢复。
 
 验收：重建 `DataManager` 后仍能查到文件，读取结果与原文件一致；同名写入被拒绝，原数据保持有效。
 
 #### 第 5 步：接入 HTTP 上传
 
-1. 使用第 5 节约定的 `POST /upload`，解析文件名、存储类型和二进制请求体。
-2. 校验参数、文件名、大小限制和同名冲突。
-3. 调用文件工具和元数据管理，全部成功后返回上传成功。
+1. 使用第 5 节约定的 `POST /upload`，读取 `FileName`、`StorageType` 请求头，将 UTF-8 文件名从 Base64 解码，将存储策略转换为 `StorageType` 枚举，并读取二进制请求体。
+2. 校验必填请求头、编码、文件名、大小限制、目标路径占用和下载 URL 冲突；第一阶段只接受 `uncompressed`，允许零字节文件。请求体大小限制应同时设置在 HTTP 接收层，并在业务处理分配内存前检查实际长度。
+3. 将文件保存到 `getUncompressedFilesDirPath()` 对应目录，使用最终文件路径调用 `FileMetadata::FromFile()`，插入并持久化元数据；全部成功后返回 201 和结果 JSON。
 4. 日志记录文件名、大小、结果和错误原因，正文保持简短。
 
-验收：先用 HTTP 工具上传文本和二进制文件；磁盘内容一致，元数据正确；失败响应不会出现成功条目。
+验收：先用 HTTP 工具上传文本、二进制和零字节文件；磁盘内容一致，元数据正确；缺失请求头、非法 Base64、未知存储类型等返回 400；失败响应不会出现成功条目。
 
 #### 第 6 步：列表与下载
 
-1. `GET /files` 返回文件列表 JSON，包含名称、原始大小、存储类型和下载 URL。
+1. `GET /files` 返回文件列表 JSON，包含名称、存储大小、存储类型和下载 URL，存储类型统一返回 `uncompressed` 或 `compressed`。
 2. `GET /download/<编码后的文件名>` 根据元数据定位文件，并返回原始二进制内容。
 3. 路径中的名称按 URL 路径规则解码一次，正确保留加号；使用服务端记录的路径查找文件。
 4. 设置合适的响应类型和下载文件名；文件不存在时返回 404。
 
-第一版针对受大小限制的文件，可以先读入内存再返回。流式传输和 Range 下载在后续实施。
+第一版针对受大小限制的文件，可以先读入内存再返回完整内容，状态为 200。压缩文件根据所属目录判断策略，在内存中解压后返回。流式传输和 Range 下载在后续实施。
 
 验收：下载内容与上传内容逐字节一致；中文、空格、加号文件名的链接可用；未知文件返回 404。
 
 #### 第 7 步：浏览器页面
 
-1. `GET /` 返回 `web/index.html`。
+1. `GET /` 返回 `web/index.html`，按可执行文件目录定位；XMake 配置、安装和打包时同步页面资源。
 2. 页面只提供文件选择、上传按钮、文件列表和下载链接。
-3. 浏览器以文件对象作为请求体，用 `fetch()` 上传；文件名用 `encodeURIComponent()` 放入查询参数。
+3. 浏览器以文件对象作为请求体，用 `fetch('/upload', ...)` 上传，设置 `Content-Type: application/octet-stream`；文件名先转为 UTF-8 字节再进行 Base64 编码，放入 `FileName` 请求头；`StorageType` 请求头先固定为 `uncompressed`。不要直接对含中文的文件名调用 `btoa(file.name)`。
 4. 上传成功后重新请求列表；页面显示服务端返回的错误。文件名按文本渲染，使用同源相对 URL。
 
-这份上传协议用于减少第一版的解析代码，前后端一起实现；暂不使用需要另外解析的 multipart 表单。
+这份上传协议将上传元数据放在请求头中，正文直接使用文件字节，前后端一起实现。文件名的 Base64 编码只用于上传请求头；生成下载链接时仍使用 URL 百分号编码。
 
 验收：只通过浏览器就能完成选择文件、上传、刷新列表、点击下载。
 
@@ -217,34 +289,35 @@ DLOG_INFO() << "upload finished, file=" << filename
 | 首次启动 | 创建所需目录，显示空列表 |
 | 文本、二进制和零字节文件 | 上传后可下载，字节内容一致 |
 | 中文、空格、加号文件名 | 上传、列表、下载都可用 |
+| `FileName` 或 `StorageType` 缺失、空值或非法 | 返回 400，未发布成功条目 |
 | 同名文件 | 返回冲突，已有内容不被覆盖 |
 | 参数或文件名错误、文件过大 | 返回明确失败，未发布成功条目 |
 | 文件或元数据写入失败 | 返回失败并记录错误，原有条目仍可用 |
 | 正常停止并重启 | 文件和列表恢复，之前的文件仍可下载 |
 | 正常停止 | 最后一批业务和关闭日志已写出 |
 
-业务测试先沿用现有 `test/core` 分组，覆盖文件内容往返、同名保护、元数据恢复和失败后的状态；再做一次真实 HTTP 和浏览器验证。
+业务测试沿用现有 `test/server` 分组，覆盖请求头解析、文件内容往返、同名保护、元数据恢复和失败后的状态；再做一次真实 HTTP 和浏览器验证。
 
 在项目根目录使用现有目标构建、运行；启用 GoogleTest 后运行对应测试分组：
 
-```powershell
-xmake build -y dlog-cloud-storage
-xmake run dlog-cloud-storage
-xmake test -y tests/core
+```bash
+rtk xmake build -y dlog-cloud-storage-server
+rtk xmake run dlog-cloud-storage-server
+rtk xmake test -y tests/server
 ```
 
-这些是实施时的验证步骤，本计划仅描述实施路线，尚未执行功能开发和集成测试。
+这些是后续实施时的验证步骤；当前基础模块已有单元测试，HTTP 功能开发和整体验收仍待完成。
 
 ### 6.2 第二阶段：压缩存储
 
 普通存储验收通过后，再补齐参考项目的另一种核心存储方式。
 
-1. 先独立验证压缩库的构建及“原数据 → 压缩 → 解压 → 原数据”往返结果；沿用参考项目时采用 bundle 的 LZIP 格式。
-2. 在文件工具中封装压缩、解压接口，给配置增加压缩文件目录。
-3. 上传仍接收普通文件；选择 `compressed` 时，由服务端压缩后保存，元数据保留原始大小和实际路径。
+1. 复用已接入的 bundle 和压缩往返测试，核对配置中的 `bundle_format`；沿用参考项目时采用 LZIP 格式。
+2. 复用 `FileUtil::Compress()`、`FileUtil::UnCompress()` 和已有的压缩文件目录配置。
+3. 上传请求接受 `StorageType: compressed`，正文仍为原始文件字节；由服务端压缩处理后保存到 `getCompressedFilesDirPath()` 对应目录。元数据记录实际存储路径和存储大小，若增加原始大小字段需同步处理持久化与加载兼容。
 4. 下载时根据元数据解压并返回原始内容；对第一版小文件可以先在内存中解压，避免共享临时下载文件。
-5. 页面增加“普通存储 / 压缩存储”的选择，沿用已有列表和下载接口。
-6. 验证压缩失败、数据损坏和重启恢复；失败时不发布成功条目，解压后内容与上传内容一致。
+5. 页面增加“未压缩存储 / 压缩存储”的选择，分别发送 `StorageType: uncompressed`、`StorageType: compressed`，沿用已有列表和下载接口。
+6. 验证两种策略间的同名冲突、零字节文件、压缩失败、数据损坏和重启恢复；失败时不发布成功条目，解压后内容与上传内容一致。
 
 ## 7. 后续扩展与实施注意事项
 
@@ -265,6 +338,8 @@ xmake test -y tests/core
 3. 插入或更新后调用 `persistToDisk()`，把整张表序列化为 JSON，并覆盖保存元数据文件。
 
 接口约定：`insert(info)` 只新增记录，URL 已存在时抛出 `std::invalid_argument`；`update(info)` 只更新已有记录，URL 不存在时抛出 `std::out_of_range`。两者修改后都持久化，保存失败时传播异常。私有函数 `insertWithoutPersist(info)` 只向内存表新增记录，URL 重复时同样报错，供 `loadFromDisk()` 加载历史元数据时调用。
+
+上述先修改内存再写盘的流程是当前实现行为。接入 HTTP 上传时，按第 6.1 节第 4 步补齐失败时保留原有状态的提交流程，仍沿用内存表与 JSON 全量保存模型。
 
 路径约定：配置文件、存储文件和元数据持久化文件的相对路径都以可执行文件所在目录为基准，绝对路径按原路径访问。`config/server.conf` 通过 `compressed_files_dir`、`uncompressed_files_dir` 和 `metadata_file` 提供相对路径，`Config` 构造时通过 `readConfig()` 将它们解析为绝对路径，再次读取配置时沿用相同规则。`FileMetadata::FromFile()` 始终保存解析后的绝对路径；持久化字段 `absolute_file_path` 保存文件绝对路径，`loadFromDisk()` 直接恢复。`insert()`、`update()` 按 `FileMetadata` 已保存绝对路径的约定使用元数据。`DataManager` 构造时直接保存 `Config::getMetadataFilePath()` 返回的绝对路径，加载和保存使用同一路径，不受工作目录变化影响。
 
@@ -289,7 +364,7 @@ dlog 的 `DLOG_FATAL()` 在输出后调用刷新回调，再终止进程；默�
 
 ### 跨平台适配
 
-参考项目使用 `pthread`、POSIX 文件接口和 Linux Makefile。本项目沿用 C++17/XMake，优先使用标准库处理文件系统、线程和锁，对必须依赖平台的操作单独封装，并验证 Windows、Linux 的构建与运行。[参考构建文件](https://github.com/youngyangyang04/Kama-AsynLogSystem-CloudStorage/blob/main/src/server/Makefile)
+参考项目使用 `pthread`、POSIX 文件接口和 Linux Makefile。本项目沿用 C++17/XMake，优先使用标准库处理文件系统、线程和锁，对必须依赖平台的操作单独封装。通用工具验证 Windows、Linux 的构建与运行，服务端仅构建和验证 Linux 目标。[参考构建文件](https://github.com/youngyangyang04/Kama-AsynLogSystem-CloudStorage/blob/main/src/server/Makefile)
 
 ### 断点下载
 
@@ -301,11 +376,11 @@ dlog 的 `DLOG_FATAL()` 在输出后调用刷新回调，再终止进程；默�
 
 ## 8. 当前状态与下一步
 
-当前仓库已调整为“内部静态库 + 可执行程序 + 单元测试”的 XMake 应用工程，沿用原模板的 `LTest`、GoogleTest 分组和开发示例来验证链接关系。主目标为 `dlog-cloud-storage`，内部库为 `dlog-cloud-storage-static`；对外的头文件导出、DLL 接口、包元数据及 xmake-repo 更新流程已移除，尚未实现云存储业务。
+当前仓库采用“通用工具静态库 + Linux 服务端静态库 + 服务端可执行程序 + 单元测试”的 XMake 应用工程，服务端主目标为 `dlog-cloud-storage-server`。已有 Linux 安装与打包流程，通用工具、服务端配置和元数据管理已有实现与单元测试。
 
-当前包依赖清单为空，`main.cpp` 仍为 `LTest` 示例。上述业务模块、HTTP 协议和页面均待实现，尚未进行云存储与 dlog 的集成运行验证。
+当前包依赖包括 bundle、JsonCpp 和 cpp-base64；`src/server/main.cpp` 目前只读取并输出配置。`Service`、浏览器页面和应用侧 dlog 接入仍待实现，尚未完成真实 HTTP 上传下载和集成运行验收。
 
-本计划于 2026-10-13 整理，2026-10-14 根据最简单可用版本的要求及本地参考文档更新，并合并具体实施路线。实现时应再次核对所采用依赖版本的接口和行为，Windows、Linux 的构建与运行在所交付版本上验证。
+2026-10-22 确认上传采用自定义请求头协议：`FileName` 传递 UTF-8 文件名的 Base64 编码，`StorageType` 使用 `uncompressed`、`compressed`。本次同步整理 Service 的职责、上传和下载流程、页面上传方式及验收要求，并校正现有目录、构建目标和基础模块状态；HTTP 功能仍属于待实施内容。
 
-从第 1 步完成应用侧 dlog 接入，再按顺序推进存储内容。每一步完成对应验收后再进入下一步；第 8 步通过作为普通存储版本完成的标准。
+下一步先按第 6.1 节第 2 步运行最小 HTTP 服务，完成监听、固定响应、路由和停止流程，再逐步接入上传、列表、下载与浏览器页面。基础配置和工具沿用现有实现；在上传整体验收前补齐首次启动初始化、元数据持久化失败处理及应用侧 dlog 接入。第 8 步通过作为未压缩存储版本完成的标准。
 
