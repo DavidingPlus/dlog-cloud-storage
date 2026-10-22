@@ -40,7 +40,7 @@ target("tests")
     set_targetdir("$(builddir)/$(plat)/$(arch)/$(mode)/test")
 
     add_packages("gtest")
-    add_packages("bundle", "cpp-base64", "jsoncpp")
+    add_packages("bundle", "cpp-base64", "jsoncpp", "libevent")
 
     add_deps("dlog-cloud-storage-utils-static")
     if is_plat("linux") then

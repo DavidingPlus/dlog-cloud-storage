@@ -12,7 +12,7 @@ Linux 单元测试复用服务端静态库，其他平台的测试依赖工具�
 
 ## 单元测试
 
-`bundle`、`cpp-base64` 和官方 xmake-repo 的 `jsoncpp` 由 XMake 下载和链接，沿用项目当前构建模式的动态库配置。启用 GoogleTest 后运行：
+`bundle`、`cpp-base64`、`jsoncpp` 和 `libevent` 由 XMake 下载和链接，沿用项目当前构建模式的动态库配置。启用 GoogleTest 后运行：
 
 ```bash
 xmake f -m debug --with_gtest=yes -y
@@ -32,6 +32,8 @@ Config 测试覆盖首次构造与单例复用、七个字段读取和重载、�
 `FileMetadata` 的基础测试位于 `test/server/datamanager_test.cpp`，通过 `xmake test tests/server` 执行，检查正常文件的元数据字段及文件不存在时的异常。
 
 第三方库测试位于 `test/third_party/`。JsonCpp 测试覆盖值与容器操作、解析和序列化、流接口、Unicode 与空字节、64 位数值边界及大批量元数据往返。错误输入测试显式使用严格模式，检查语法错误、重复键、多余内容、非标准扩展和嵌套深度限制。
+
+libevent 测试位于 `test/third_party/libevent_test.cpp`，通过 `rtk xmake test -y tests/third_party` 执行。覆盖事件激活、取消与释放、一次性和重复定时器、优先级、事件循环退出与恢复、二进制缓冲区、URI 和查询参数解析，以及 HTTP 请求头和输入输出缓冲区。用例不监听端口、不访问外部网络、不发送进程信号；定时器测试不依赖精确耗时断言，重复定时器设置退出期限，Windows 下由测试套件初始化并清理 Winsock。
 
 ## 服务端打包（Linux）
 
