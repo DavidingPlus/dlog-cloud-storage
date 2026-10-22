@@ -31,7 +31,7 @@ FileMetadata FileMetadata::FromFile(const std::filesystem::path &filePath)
 
 void DataManager::loadFromDisk()
 {
-    // 构造函数中 m_metadataFilePath 已经被统一为绝对路径了，这里无需处理。下面 persistToDisk() 同理。
+    // Config 已将元数据持久化文件路径解析为绝对路径，这里无需处理。下面 persistToDisk() 同理。
     utils::FileUtil file(m_metadataFilePath);
     if (!file.exists()) throw std::filesystem::filesystem_error("DataManager::loadFromDisk(): file does not exist", m_metadataFilePath, std::make_error_code(std::errc::no_such_file_or_directory));
 

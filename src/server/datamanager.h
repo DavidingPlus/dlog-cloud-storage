@@ -4,7 +4,6 @@
 #include "globalmacros.h"
 
 #include "server/config.h"
-#include "utils/common.h"
 
 #include <filesystem>
 #include <shared_mutex>
@@ -46,7 +45,7 @@ class DataManager
 
 public:
 
-    DataManager() : m_metadataFilePath(utils::executableDirectory() / Config::GetInstance().getMetadataFilePath()) { loadFromDisk(); }
+    DataManager() : m_metadataFilePath(Config::GetInstance().getMetadataFilePath()) { loadFromDisk(); }
 
     ~DataManager() = default;
 
