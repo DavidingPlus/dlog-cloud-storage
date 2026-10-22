@@ -22,6 +22,7 @@ public:
     static Config &GetInstance();
 
     // 从可执行文件所在目录的 config/server.conf 读取配置，仅在启动阶段调用。字段校验失败抛出 std::invalid_argument。
+    // 三个文件系统路径均以可执行文件所在目录为基准解析为绝对路径。
     // XMake 流程会自动将项目根目录的 config/server.conf 拷贝到可执行文件的目录。
     void readConfig();
 
@@ -54,13 +55,13 @@ private:
     // 下载 URL 前缀。
     std::string m_downloadPrefix;
 
-    // 深度存储文件的存储目录。
+    // 深度存储文件的存储目录，保存为绝对路径。
     std::filesystem::path m_deepStorageDir;
 
-    // 浅度存储文件的存储目录。
+    // 浅度存储文件的存储目录，保存为绝对路径。
     std::filesystem::path m_lowStorageDir;
 
-    // 文件元数据的持久化文件。
+    // 文件元数据持久化文件的绝对路径。
     std::filesystem::path m_metadataFilePath;
 
     // bundle 压缩格式编号。

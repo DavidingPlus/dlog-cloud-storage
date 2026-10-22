@@ -120,9 +120,12 @@ namespace
             EXPECT_EQ(config.getServerIp(), root["server_ip"].asString());
             EXPECT_EQ(config.getServerPort(), root["server_port"].asInt());
             EXPECT_EQ(config.getDownloadPrefix(), root["download_prefix"].asString());
-            EXPECT_EQ(config.getDeepStorageDir(), root["deep_storage_dir"].asString());
-            EXPECT_EQ(config.getLowStorageDir(), root["low_storage_dir"].asString());
-            EXPECT_EQ(config.getMetadataFilePath(), root["metadata_file"].asString());
+            EXPECT_TRUE(config.getDeepStorageDir().is_absolute());
+            EXPECT_TRUE(config.getLowStorageDir().is_absolute());
+            EXPECT_TRUE(config.getMetadataFilePath().is_absolute());
+            EXPECT_EQ(config.getDeepStorageDir(), utils::executableDirectory() / root["deep_storage_dir"].asString());
+            EXPECT_EQ(config.getLowStorageDir(), utils::executableDirectory() / root["low_storage_dir"].asString());
+            EXPECT_EQ(config.getMetadataFilePath(), utils::executableDirectory() / root["metadata_file"].asString());
             EXPECT_EQ(config.getBundleFormat(), root["bundle_format"].asInt());
         }
 
@@ -236,6 +239,22 @@ TEST_F(ConfigTests, FindsConfigurationBesideExecutableAfterWorkingDirectoryChang
     ASSERT_FALSE(::testing::Test::HasFatalFailure());
 
     ASSERT_NO_THROW(server::Config::GetInstance().readConfig());
+    ExpectConfig(validConfig());
+}
+
+TEST_F(ConfigTests, LoadedPathsRemainAbsoluteAfterWorkingDirectoryChanges)
+{
+    const auto &config = server::Config::GetInstance();
+    const auto deepStorageDir = config.getDeepStorageDir();
+    const auto lowStorageDir = config.getLowStorageDir();
+    const auto metadataFilePath = config.getMetadataFilePath();
+
+    prepareWorkingDirectory();
+    ASSERT_FALSE(::testing::Test::HasFatalFailure());
+
+    EXPECT_EQ(config.getDeepStorageDir(), deepStorageDir);
+    EXPECT_EQ(config.getLowStorageDir(), lowStorageDir);
+    EXPECT_EQ(config.getMetadataFilePath(), metadataFilePath);
     ExpectConfig(validConfig());
 }
 
@@ -438,7 +457,7 @@ TEST_F(ConfigTests, AcceptsRootAndNestedDownloadPrefixes)
     }
 }
 
-TEST_F(ConfigTests, PreservesUnicodeAndFilePathsAsConfigured)
+TEST_F(ConfigTests, PreservesUnicodeWhileResolvingFilePaths)
 {
     auto root = updatedConfig();
     root["server_ip"] = "::1";

@@ -27,7 +27,8 @@ Config &Config::GetInstance()
 
 void Config::readConfig()
 {
-    auto configFile = utils::executableDirectory() / kConfigFile;
+    auto executableDir = utils::executableDirectory();
+    auto configFile = executableDir / kConfigFile;
 
     auto root = utils::JsonUtil::UnSerialize(utils::FileUtil(configFile).getContent());
     if (!root.isObject()) throw std::invalid_argument("Config::readConfig(): root must be an object");
@@ -51,9 +52,10 @@ void Config::readConfig()
     m_serverIp = root["server_ip"].asString();
     m_serverPort = root["server_port"].asInt();
     m_downloadPrefix = downloadPrefix;
-    m_deepStorageDir = root["deep_storage_dir"].asString();
-    m_lowStorageDir = root["low_storage_dir"].asString();
-    m_metadataFilePath = root["metadata_file"].asString();
+    // 配置中的相对路径以可执行文件所在目录为基准，绝对路径直接使用。
+    m_deepStorageDir = executableDir / root["deep_storage_dir"].asString();
+    m_lowStorageDir = executableDir / root["low_storage_dir"].asString();
+    m_metadataFilePath = executableDir / root["metadata_file"].asString();
     m_bundleFormat = root["bundle_format"].asInt();
 }
 
