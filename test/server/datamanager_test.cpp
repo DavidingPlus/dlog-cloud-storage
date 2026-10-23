@@ -714,6 +714,26 @@ TEST_F(DataManagerTests, InsertAddsRecordAndImmediatelyPersistsWholeTable)
     ExpectInfos(restored.getAll(), {first, second, added});
 }
 
+TEST_F(DataManagerTests, InsertNormalizesPathWithoutChangingCaller)
+{
+    auto expected = MakeInfo("report.txt");
+    expected.m_absoluteFilePath = m_directory / "report.txt";
+    auto supplied = expected;
+    supplied.m_absoluteFilePath = m_directory / "./staging/../report.txt";
+    const auto originalPath = supplied.m_absoluteFilePath;
+    ASSERT_FALSE(fs::exists(expected.m_absoluteFilePath));
+    server::DataManager manager;
+
+    ASSERT_NO_THROW(manager.insert(supplied));
+
+    EXPECT_EQ(supplied.m_absoluteFilePath, originalPath);
+    ExpectInfo(manager.getOneByUrl(expected.m_url), expected);
+    ExpectInfo(manager.getOneByFilePath(m_directory.filename() / "report.txt"), expected);
+    EXPECT_EQ(readMetadata()[0]["absolute_file_path"].asString(), expected.m_absoluteFilePath.string());
+    const server::DataManager restored;
+    ExpectInfo(restored.getOneByFilePath(originalPath), expected);
+}
+
 TEST_F(DataManagerTests, InsertRejectsDuplicateUrlWithoutChangingMemoryOrDisk)
 {
     const auto original = MakeInfo("report.txt");
