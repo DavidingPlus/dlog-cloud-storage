@@ -69,6 +69,28 @@ unsigned char fromHex(unsigned char x)
     }
 }
 
+std::string percentEncode(const std::string &text, bool preserveSlash)
+{
+    std::string encoded;
+
+    for (const unsigned char &ch : text)
+    {
+        if ((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || '-' == ch || '_' == ch || '.' == ch || '~' == ch || (preserveSlash && '/' == ch))
+        {
+            encoded += static_cast<char>(ch);
+        }
+        else
+        {
+            encoded += '%';
+            encoded += static_cast<char>(toHex(ch >> 4));
+            encoded += static_cast<char>(toHex(ch & 0x0F));
+        }
+    }
+
+
+    return encoded;
+}
+
 std::string urlDecode(const std::string &url)
 {
     std::string decoded;

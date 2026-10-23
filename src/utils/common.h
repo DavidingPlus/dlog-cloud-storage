@@ -25,6 +25,10 @@ unsigned char toHex(unsigned char x);
 // 与 toHex() 的转换方向相反；非法字符（例如 'G'）抛出 std::invalid_argument。
 unsigned char fromHex(unsigned char x);
 
+// 百分号编码：保留 ASCII 字母、数字和 -_.~，其余字节编码为 %HH；preserveSlash 指定是否额外保留 '/'。
+// 输入按原始字节处理，已有 '%' 也会编码；例如 "a%20b" -> "a%2520b"。
+std::string percentEncode(const std::string &text, bool preserveSlash);
+
 // 把 URL 中形如 "%20" 的编码还原为对应字节，例如 "hello%20world.txt" -> "hello world.txt"。
 // URL 标准约定用 "%HH" 表示一个字节： '%' 标记编码的开始，HH 是两位十六进制数字的占位写法。一位十六进制数字表示 4 位二进制，两位表示 8 位（00 ~FF，即 0 ~255），正好表示一个字节。
 // 从左往右读取：普通内容原样保留；遇到 '%'，将后两位十六进制数字合成一个字节。例如 %20 -> 2 * 16 + 0 = 32，对应 ASCII 中的空格。'%' 后不足两位或含非法十六进制字符时抛出 std::invalid_argument。
