@@ -29,7 +29,7 @@ unsigned char fromHex(unsigned char x);
 // URL 标准约定用 "%HH" 表示一个字节： '%' 标记编码的开始，HH 是两位十六进制数字的占位写法。一位十六进制数字表示 4 位二进制，两位表示 8 位（00 ~FF，即 0 ~255），正好表示一个字节。
 // 从左往右读取：普通内容原样保留；遇到 '%'，将后两位十六进制数字合成一个字节。例如 %20 -> 2 * 16 + 0 = 32，对应 ASCII 中的空格。'%' 后不足两位或含非法十六进制字符时抛出 std::invalid_argument。
 // 为什么特别强调加号？路径中的加号可以直接写成 '+'，也可以编码为 "%2B"；本函数会把这两种写法都还原为加号。例如 "a+b.txt" 和 "a%2Bb.txt" 都得到 "a+b.txt"。表单编码另有“'+' 表示空格”的规则；本函数按路径规则处理，输入中的 '+' 保持不变。
-std::string urlDecode(const std::string &str);
+std::string urlDecode(const std::string &url);
 
 
 DLOG_CLOUD_STORAGE_NAMESPACE_END
