@@ -48,11 +48,11 @@ private:
     // 按服务端本地时区格式化为 YYYY-MM-DD HH:MM:SS，时钟转换在函数内部完成。
     static std::string FormatFileTime(std::filesystem::file_time_type t);
 
+    // 将文件字节数按 1024 进位格式化为 B/KB/MB/GB，保留两位小数。
+    static std::string FormatFileSize(uint64_t bytes);
+
     // 根据元数据生成文件列表 HTML。
     static std::string GenerateModernFileList(const std::vector<FileMetadata> &files);
-
-    // 将文件字节数格式化为可读大小。
-    static std::string FormatSize(std::uint64_t bytes);
 
     // 查询元数据并返回包含文件列表的 HTML 页面。
     static void ListShow(evhttp_request *req, void *arg);

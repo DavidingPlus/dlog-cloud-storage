@@ -56,17 +56,34 @@ std::string Service::FormatFileTime(std::filesystem::file_time_type t)
     // stream 收集格式化后的字，std::put_time() 按指定格式输出日历字段，str() 返回最终字符串。
     std::ostringstream stream;
     stream << std::put_time(&localTime, "%Y-%m-%d %H:%M:%S");
-    if (stream.fail()) throw std::runtime_error("FormatFileTime(): time formatting failed");
+    if (stream.fail()) throw std::runtime_error("FormatFileTime(): file time formatting failed");
+
+
+    return stream.str();
+}
+
+std::string Service::FormatFileSize(uint64_t bytes)
+{
+    // 每 1024 字节进一档，最大使用 GB，显示时固定保留两位小数。
+    constexpr char *units[] = {"B", "KB", "MB", "GB"};
+    int index = 0;
+    double size = static_cast<double>(bytes);
+
+    while (size >= 1024 && index < 3)
+    {
+        size /= 1024;
+        ++index;
+    }
+
+    std::ostringstream stream;
+    stream << std::fixed << std::setprecision(2) << size << " " << units[index];
+    if (stream.fail()) throw std::runtime_error("FormatFileSize(): file size formatting failed");
 
 
     return stream.str();
 }
 
 std::string Service::GenerateModernFileList(const std::vector<FileMetadata> &)
-{
-}
-
-std::string Service::FormatSize(std::uint64_t)
 {
 }
 
