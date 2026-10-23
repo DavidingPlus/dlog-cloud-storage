@@ -275,6 +275,37 @@ TEST(CommonTests, UrlEncodeMatchesExpectedEncodingForEveryByte)
     EXPECT_EQ(utils::urlEncode(allByteValues()), percentEncodedAllBytes(true));
 }
 
+TEST(CommonTests, FileNameEncodePreservesEmptyAndUnreservedNames)
+{
+    const std::string names[] = {"", "a-_.~09AZaz.txt", ".", ".."};
+
+    for (const auto &name : names)
+    {
+        SCOPED_TRACE(name);
+        EXPECT_EQ(utils::fileNameEncode(name), name);
+    }
+}
+
+TEST(CommonTests, FileNameEncodeEscapesSlashesBackslashesAndSpecialCharacters)
+{
+    EXPECT_EQ(utils::fileNameEncode("/a\\b?#.txt"), "%2Fa%5Cb%3F%23.txt");
+    EXPECT_EQ(utils::fileNameEncode("a \"'<>+%.txt"), "a%20%22%27%3C%3E%2B%25.txt");
+    EXPECT_EQ(utils::fileNameEncode(u8"云😀.txt"), "%E4%BA%91%F0%9F%98%80.txt");
+}
+
+TEST(CommonTests, FileNameEncodeDistinguishesSpacesPlusesAndLiteralEscapes)
+{
+    EXPECT_EQ(utils::fileNameEncode("a b.txt"), "a%20b.txt");
+    EXPECT_EQ(utils::fileNameEncode("a+b.txt"), "a%2Bb.txt");
+    EXPECT_EQ(utils::fileNameEncode("a%20b.txt"), "a%2520b.txt");
+}
+
+TEST(CommonTests, FileNameEncodeMatchesExpectedEncodingForEveryByte)
+{
+    EXPECT_EQ(utils::fileNameEncode(allByteValues()), percentEncodedAllBytes(false));
+}
+
+
 // URL 解码与编码后的往返。
 
 TEST(CommonTests, UrlDecodePreservesUnescapedText)
