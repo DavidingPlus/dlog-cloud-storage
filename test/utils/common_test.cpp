@@ -387,3 +387,28 @@ TEST(CommonTests, UrlDecodeRejectsEveryInvalidHexByteInEitherPosition)
         EXPECT_THROW(utils::urlDecode(std::string("%0") + character), std::invalid_argument);
     }
 }
+
+TEST(CommonTests, UrlDecodeReversesBothEncodingModesForRawTextAndBinary)
+{
+    const std::string inputs[] = {
+        "", "/", "//download/./a b+c.txt", "%", "%GG", "%2F%2520",
+        u8"云存储/😀.txt", std::string("a\0/b\xff", 5), allByteValues(), repeatText(allByteValues(), 256)};
+
+    for (const auto &input : inputs)
+    {
+        SCOPED_TRACE(::testing::Message() << "input size: " << input.size());
+        EXPECT_EQ(utils::urlDecode(utils::urlEncode(input)), input);
+        EXPECT_EQ(utils::urlDecode(utils::fileNameEncode(input)), input);
+    }
+}
+
+TEST(CommonTests, EncodingDecodedTextNormalizesEquivalentRepresentations)
+{
+    // 逆向组合不保证还原原来的编码拼写：大小写及可直接保留的字符会规范化。
+    EXPECT_EQ(utils::urlEncode(utils::urlDecode("%61.txt")), "a.txt");
+    EXPECT_EQ(utils::urlEncode(utils::urlDecode("%2f%41%2b")), "/A%2B");
+    EXPECT_EQ(utils::fileNameEncode(utils::urlDecode("%2f%41%2b")), "%2FA%2B");
+    EXPECT_EQ(utils::urlEncode(utils::urlDecode("%7e")), "~");
+    EXPECT_EQ(utils::urlEncode(utils::urlDecode("%e4%ba%91")), "%E4%BA%91");
+    EXPECT_EQ(utils::urlEncode(utils::urlDecode("a+b")), "a%2Bb");
+}
