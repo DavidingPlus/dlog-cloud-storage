@@ -412,3 +412,87 @@ TEST(CommonTests, EncodingDecodedTextNormalizesEquivalentRepresentations)
     EXPECT_EQ(utils::urlEncode(utils::urlDecode("%e4%ba%91")), "%E4%BA%91");
     EXPECT_EQ(utils::urlEncode(utils::urlDecode("a+b")), "a%2Bb");
 }
+
+
+// HTML 文本转义与 URL 编码用途不同：只替换 HTML 特殊字符，其余字节原样保留。
+
+TEST(CommonTests, EscapeHtmlTextHandlesEmptyInput)
+{
+    EXPECT_EQ(utils::escapeHtmlText(""), "");
+}
+
+TEST(CommonTests, EscapeHtmlTextPreservesOrdinaryTextAndUtf8)
+{
+    const std::string inputs[] = {"a-_.~09AZaz.txt", "/download/a+b%20.txt?x=1#part", u8"云存储 😀.txt", " \t\r\n"};
+
+    for (const auto &input : inputs)
+    {
+        SCOPED_TRACE(input);
+        EXPECT_EQ(utils::escapeHtmlText(input), input);
+    }
+}
+
+TEST(CommonTests, EscapeHtmlTextEscapesEachSpecialCharacter)
+{
+    const struct
+    {
+        std::string input;
+        std::string expected;
+    } cases[] = {{"&", "&amp;"}, {"<", "&lt;"}, {">", "&gt;"}, {"\"", "&quot;"}, {"'", "&#39;"}};
+
+    for (const auto &testCase : cases)
+    {
+        SCOPED_TRACE(testCase.input);
+        EXPECT_EQ(utils::escapeHtmlText(testCase.input), testCase.expected);
+    }
+}
+
+TEST(CommonTests, EscapeHtmlTextDoesNotReescapeEntitiesGeneratedDuringTheSameCall)
+{
+    EXPECT_EQ(utils::escapeHtmlText("&<>\"'"), "&amp;&lt;&gt;&quot;&#39;");
+}
+
+TEST(CommonTests, EscapeHtmlTextHandlesMixedFileNames)
+{
+    EXPECT_EQ(utils::escapeHtmlText(u8"云存储 <draft> & \"copy's\".txt"),
+              u8"云存储 &lt;draft&gt; &amp; &quot;copy&#39;s&quot;.txt");
+}
+
+TEST(CommonTests, EscapeHtmlTextTreatsExistingEntitiesAsLiteralText)
+{
+    EXPECT_EQ(utils::escapeHtmlText("&amp;&lt;&#39;&quot;&#x2F;"),
+              "&amp;amp;&amp;lt;&amp;#39;&amp;quot;&amp;#x2F;");
+    EXPECT_EQ(utils::escapeHtmlText(utils::escapeHtmlText("<")), "&amp;lt;");
+}
+
+TEST(CommonTests, EscapeHtmlTextEscapesTagAndAttributeLikeText)
+{
+    EXPECT_EQ(utils::escapeHtmlText("<script>alert('x')</script>"),
+              "&lt;script&gt;alert(&#39;x&#39;)&lt;/script&gt;");
+    EXPECT_EQ(utils::escapeHtmlText("<img src=x onerror=\"alert(1)\">"),
+              "&lt;img src=x onerror=&quot;alert(1)&quot;&gt;");
+}
+
+TEST(CommonTests, EscapeHtmlTextPreservesBinaryDataAndProcessesTextAfterNuls)
+{
+    const std::string prefix("\0\x01\t\r\n\x7f\x80\xff", 8);
+    const std::string suffix("\0tail", 5);
+
+    EXPECT_EQ(utils::escapeHtmlText(prefix + "&<" + suffix), prefix + "&amp;&lt;" + suffix);
+}
+
+TEST(CommonTests, EscapeHtmlTextOnlyChangesTheFiveSpecialBytes)
+{
+    const auto bytes = allByteValues();
+    // 特殊字节的 ASCII 位置依次为：双引号 34、& 38、单引号 39、< 60、> 62。
+    const auto expected = bytes.substr(0, 34) + "&quot;" + bytes.substr(35, 3) + "&amp;&#39;" +
+                          bytes.substr(40, 20) + "&lt;=&gt;" + bytes.substr(63);
+
+    EXPECT_EQ(utils::escapeHtmlText(bytes), expected);
+}
+
+TEST(CommonTests, EscapeHtmlTextHandlesLongMixedInput)
+{
+    EXPECT_EQ(utils::escapeHtmlText(repeatText("A<&\"'>Z", 4096)),
+              repeatText("A&lt;&amp;&quot;&#39;&gt;Z", 4096));
+}

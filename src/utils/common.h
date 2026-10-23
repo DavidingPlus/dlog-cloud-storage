@@ -41,6 +41,9 @@ inline std::string fileNameEncode(const std::string &fileName) { return percentE
 // 为什么特别强调加号？路径中的加号可以直接写成 '+'，也可以编码为 "%2B"；本函数会把这两种写法都还原为加号。例如 "a+b.txt" 和 "a%2Bb.txt" 都得到 "a+b.txt"。表单编码另有“'+' 表示空格”的规则；本函数按路径规则处理，输入中的 '+' 保持不变。
 std::string urlDecode(const std::string &url);
 
+// 转义（escape）HTML 中显示的文本，将 &、<、>、双引号和单引号转换为实体；例如 "a<b>.txt" -> "a&lt;b&gt;.txt"。
+std::string escapeHtmlText(const std::string &text);
+
 
 DLOG_CLOUD_STORAGE_NAMESPACE_END
 
