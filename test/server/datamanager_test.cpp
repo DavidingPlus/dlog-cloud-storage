@@ -789,6 +789,30 @@ TEST_F(DataManagerTests, UpdateReplacesRecordAndImmediatelyPersistsWholeTable)
     ExpectInfos(restored.getAll(), {updated, other});
 }
 
+TEST_F(DataManagerTests, UpdateNormalizesPathWithoutChangingCaller)
+{
+    const auto original = MakeInfo("report.txt");
+    writeRecords({original});
+    server::DataManager manager;
+    auto expected = MakeInfo("updated.txt", 99, 123);
+    expected.m_absoluteFilePath = m_directory / "updated.txt";
+    expected.m_url = original.m_url;
+    auto supplied = expected;
+    supplied.m_absoluteFilePath = m_directory / "./staging/../updated.txt";
+    const auto originalPath = supplied.m_absoluteFilePath;
+    ASSERT_FALSE(fs::exists(expected.m_absoluteFilePath));
+
+    ASSERT_NO_THROW(manager.update(supplied));
+
+    EXPECT_EQ(supplied.m_absoluteFilePath, originalPath);
+    ExpectInfo(manager.getOneByUrl(expected.m_url), expected);
+    ExpectInfo(manager.getOneByFilePath(m_directory.filename() / "updated.txt"), expected);
+    EXPECT_THROW(manager.getOneByFilePath(original.m_absoluteFilePath), std::out_of_range);
+    EXPECT_EQ(readMetadata()[0]["absolute_file_path"].asString(), expected.m_absoluteFilePath.string());
+    const server::DataManager restored;
+    ExpectInfo(restored.getOneByFilePath(originalPath), expected);
+}
+
 TEST_F(DataManagerTests, UpdateRejectsUnknownUrlWithoutChangingMemoryOrDisk)
 {
     const auto original = MakeInfo("report.txt");
