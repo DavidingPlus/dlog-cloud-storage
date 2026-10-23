@@ -67,7 +67,7 @@ flowchart LR
 | `src/server/main.cpp` | 按顺序初始化配置、日志、数据目录、元数据和服务；完成退出清理 |
 | `src/server/applogging.h/.cpp` | 按需封装应用侧 `InitLogging()`、`ShutdownLogging()`，管理异步后端的生命周期 |
 | `src/server/config.h/.cpp` | 已实现服务地址、端口、下载前缀、文件目录、元数据路径和压缩格式配置 |
-| `src/utils/fileutil.h/.cpp`、`src/utils/common.h/.cpp` | 已实现路径定位、二进制读写、目录操作、压缩解压和 URL 解码；文件名校验等按需补充 |
+| `src/utils/fileutil.h/.cpp`、`src/utils/common.h/.cpp` | 已实现路径定位、二进制读写、目录操作、压缩解压、URL 编解码与 HTML 文本转义；文件名校验等按需补充 |
 | `src/server/datamanager.h/.cpp` | 已实现 `FileMetadata`、内存查询、JSON 持久化和启动恢复 |
 | `src/server/service.h/.cpp` | 待实现 libevent 生命周期、路由和请求处理，以及上传存储类型枚举 |
 | `web/index.html` | 文件选择、上传、列表和下载链接 |
