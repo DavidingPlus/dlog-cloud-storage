@@ -16,7 +16,7 @@ std::filesystem::path executableFullPath()
 #ifdef DLOG_CLOUD_STORAGE_OS_WIN32
 
     // 使用宽字符支持中文路径，固定缓冲区覆盖 Windows 的长路径长度范围。
-    constexpr static DWORD kMaxPathLength = 32768;
+    constexpr const DWORD kMaxPathLength = 32768;
     wchar_t buffer[kMaxPathLength] = {};
     const DWORD length = GetModuleFileNameW(nullptr, buffer, kMaxPathLength);
     if (0 == length)
