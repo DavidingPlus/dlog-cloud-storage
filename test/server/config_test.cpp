@@ -457,6 +457,23 @@ TEST_F(ConfigTests, AcceptsRootAndNestedDownloadPrefixes)
     }
 }
 
+TEST_F(ConfigTests, NormalizesRelativeAndAbsoluteFilePaths)
+{
+    auto root = updatedConfig();
+    const auto executableDir = utils::executableDirectory();
+    root["compressed_files_dir"] = "./data//staging/../compressed/";
+    root["uncompressed_files_dir"] = (executableDir / "data/./staging/../uncompressed/").string();
+    root["metadata_file"] = "./data/staging/../metadata.json";
+    writeConfig(root);
+
+    ASSERT_NO_THROW(server::Config::GetInstance().readConfig());
+
+    const auto &config = server::Config::GetInstance();
+    EXPECT_EQ(config.getCompressedFilesDirPath(), executableDir / "data/compressed/");
+    EXPECT_EQ(config.getUncompressedFilesDirPath(), executableDir / "data/uncompressed/");
+    EXPECT_EQ(config.getMetadataFilePath(), executableDir / "data/metadata.json");
+}
+
 TEST_F(ConfigTests, PreservesUnicodeWhileResolvingFilePaths)
 {
     auto root = updatedConfig();
