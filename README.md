@@ -19,7 +19,7 @@ xmake f -m debug --with_gtest=yes -y
 xmake test
 ```
 
-通用工具位于 `src/utils/`，使用 `utils` 命名空间，构建为各平台共用的内部静态库。对应测试按源码拆分为 `test/utils/common_test.cpp`、`test/utils/fileutil_test.cpp` 和 `test/utils/jsonutil_test.cpp`，覆盖可执行文件绝对路径及切换工作目录、十六进制和 URL 解码、文件属性与二进制读写、目录和符号链接、压缩解压、JSON 转换及错误处理。文件测试使用独立临时目录并自动清理；权限用例在当前用户能够绕过权限限制时跳过；符号链接、设备或跨根路径相关用例在环境不支持时跳过。`JsonUtil` 测试沿用接口当前的 JsonCpp 默认解析配置。
+通用工具位于 `src/utils/`，使用 `utils` 命名空间，构建为各平台共用的内部静态库。对应测试按源码拆分为 `test/utils/common_test.cpp`、`test/utils/fileutil_test.cpp` 和 `test/utils/jsonutil_test.cpp`，覆盖可执行文件绝对路径及切换工作目录、十六进制转换、百分号编码、URL 路径与文件名编码、URL 解码、HTML 文本转义、文件属性与二进制读写、目录和符号链接、压缩解压、JSON 转换及错误处理。编码与转义测试覆盖全部 256 个字节、斜杠策略、UTF-8、内嵌空字节、已有编码或实体、长文本，以及编码和解码往返；百分号编码使用独立的固定期望值，避免只检查往返时漏掉双方共同的错误。文件测试使用独立临时目录并自动清理；权限用例在当前用户能够绕过权限限制时跳过；符号链接、设备或跨根路径相关用例在环境不支持时跳过。`JsonUtil` 测试沿用接口当前的 JsonCpp 默认解析配置。
 
 `utils::executableFullPath()` 和 `utils::executableDirectory()` 返回 `std::filesystem::path`，分别表示当前进程可执行文件的绝对路径和所在目录，不受当前工作目录影响。支持 Windows 和 Linux，可通过 `utils::executableDirectory() / "config" / "server.conf"` 定位运行配置。
 
