@@ -86,13 +86,16 @@ void DataManager::insert(const FileMetadata &info)
 
 void DataManager::update(const FileMetadata &info)
 {
+    auto normalizedInfo = info;
+    normalizedInfo.m_absoluteFilePath = info.m_absoluteFilePath.lexically_normal();
+
     {
         std::unique_lock lock(m_rwlock);
 
         auto it = m_table.find(info.m_url);
         if (m_table.end() == it) throw std::out_of_range("DataManager::update(): URL not found: " + info.m_url);
 
-        it->second = info;
+        it->second = std::move(normalizedInfo);
     }
 
     persistToDisk();
@@ -111,7 +114,7 @@ FileMetadata DataManager::getOneByUrl(const std::string &url) const
 
 FileMetadata DataManager::getOneByFilePath(const std::filesystem::path &filePath) const
 {
-    auto absoluteFilePath = utils::executableDirectory() / filePath;
+    auto absoluteFilePath = (utils::executableDirectory() / filePath).lexically_normal();
     std::shared_lock lock(m_rwlock);
 
     for (auto &entry : m_table)
@@ -136,11 +139,15 @@ std::vector<FileMetadata> DataManager::getAll() const
 
 void DataManager::insertWithoutPersist(const FileMetadata &info)
 {
+    // 加载历史记录和直接插入元数据共用此入口，统一保存词法标准化后的路径。
+    auto normalizedInfo = info;
+    normalizedInfo.m_absoluteFilePath = info.m_absoluteFilePath.lexically_normal();
+
     std::unique_lock lock(m_rwlock);
 
     if (m_table.end() != m_table.find(info.m_url)) throw std::invalid_argument("DataManager::insertWithoutPersist(): URL already exists: " + info.m_url);
 
-    m_table[info.m_url] = info;
+    m_table[info.m_url] = std::move(normalizedInfo);
 }
 
 

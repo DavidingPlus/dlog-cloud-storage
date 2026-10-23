@@ -106,7 +106,7 @@ namespace
             server::FileMetadata info;
             info.m_mtime = fs::file_time_type(fs::file_time_type::duration(mtime));
             info.m_fileSize = fileSize;
-            info.m_absoluteFilePath = utils::executableDirectory() / "./data" / name;
+            info.m_absoluteFilePath = utils::executableDirectory() / "data" / name;
             info.m_url = "/download/" + name;
             return info;
         }
@@ -608,18 +608,23 @@ TEST_F(DataManagerTests, QueriesReturnIndependentCopies)
     EXPECT_EQ(utils::FileUtil(m_filePath).getContent(), body);
 }
 
-TEST_F(DataManagerTests, GetOneByFilePathComparesPathComponents)
+TEST_F(DataManagerTests, GetOneByFilePathNormalizesLegacyPathsAndQueries)
 {
     auto info = MakeInfo("report.txt");
-    info.m_absoluteFilePath = utils::executableDirectory() / "./data" / "folder" / "report.txt";
+    info.m_absoluteFilePath = utils::executableDirectory() / "./data/folder/staging/../report.txt";
+    const auto legacyPath = info.m_absoluteFilePath;
     writeRecords({info});
-    const server::DataManager manager;
+    info.m_absoluteFilePath = utils::executableDirectory() / "data/folder/report.txt";
+    server::DataManager manager;
     const auto body = utils::FileUtil(m_filePath).getContent();
 
     const std::vector<fs::path> paths = {
         "./data//folder///report.txt",
         "./data/folder/report.txt",
-        info.m_absoluteFilePath};
+        "data/folder/report.txt",
+        "data/folder/staging/../report.txt",
+        info.m_absoluteFilePath,
+        legacyPath};
     for (const auto &filePath : paths)
     {
         SCOPED_TRACE(filePath);
@@ -628,6 +633,11 @@ TEST_F(DataManagerTests, GetOneByFilePathComparesPathComponents)
 
     ExpectInfo(manager.getOneByUrl(info.m_url), info);
     EXPECT_EQ(utils::FileUtil(m_filePath).getContent(), body);
+
+    ASSERT_NO_THROW(manager.persistToDisk());
+    EXPECT_EQ(readMetadata()[0]["absolute_file_path"].asString(), info.m_absoluteFilePath.string());
+    const server::DataManager restored;
+    ExpectInfo(restored.getOneByFilePath(legacyPath), info);
 }
 
 TEST_F(DataManagerTests, GetOneByFilePathMatchesAbsoluteRecordUsingRelativePath)
