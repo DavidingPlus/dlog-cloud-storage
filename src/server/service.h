@@ -45,6 +45,12 @@ private:
     // 上传处理：读取 FileName、StorageType 请求头和原始文件字节。
     static void Upload(evhttp_request *req, void *arg);
 
+    // 查询元数据并返回包含文件列表的 HTML 页面。
+    static void ListShow(evhttp_request *req, void *arg);
+
+    // 下载处理：查询元数据，读取或解压后返回原始文件内容。
+    static void Download(evhttp_request *req, void *arg);
+
     // 按服务端本地时区格式化为 YYYY-MM-DD HH:MM:SS，时钟转换在函数内部完成。
     static std::string FormatFileTime(std::filesystem::file_time_type t);
 
@@ -52,16 +58,10 @@ private:
     static std::string FormatFileSize(uint64_t bytes);
 
     // 根据元数据生成文件列表 HTML。
-    static std::string GenerateModernFileList(const std::vector<FileMetadata> &files);
-
-    // 查询元数据并返回包含文件列表的 HTML 页面。
-    static void ListShow(evhttp_request *req, void *arg);
+    static std::string GenerateFileListHtml(const std::vector<FileMetadata> &files);
 
     // 根据文件元数据生成版本标识，用于缓存验证和断点续传。
     static std::string GetETag(const FileMetadata &info);
-
-    // 下载处理：查询元数据，读取或解压后返回原始文件内容。
-    static void Download(evhttp_request *req, void *arg);
 
 
     // 服务监听地址。

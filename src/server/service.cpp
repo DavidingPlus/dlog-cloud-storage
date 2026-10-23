@@ -13,6 +13,62 @@
 DLOG_CLOUD_STORAGE_NAMESPACE_BEGIN(server)
 
 
+namespace
+{
+    // 文件名作为 HTML 文本显示，转义后避免其中的特殊字符被当作标签或实体。
+    std::string escapeHtml(const std::string &text)
+    {
+        std::string escaped;
+        for (char ch : text)
+        {
+            switch (ch)
+            {
+                case '&':
+                    escaped += "&amp;";
+                    break;
+                case '<':
+                    escaped += "&lt;";
+                    break;
+                case '>':
+                    escaped += "&gt;";
+                    break;
+                case '"':
+                    escaped += "&quot;";
+                    break;
+                case '\'':
+                    escaped += "&#39;";
+                    break;
+                default:
+                    escaped += ch;
+                    break;
+            }
+        }
+        return escaped;
+    }
+
+    // 百分号编码；调用方明确指定是否保留路径分隔符 '/'。
+    std::string percentEncode(const std::string &text, bool preserveSlash)
+    {
+        std::string encoded;
+        for (unsigned char ch : text)
+        {
+            if ((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '-' || ch == '_' || ch == '.' || ch == '~' || (preserveSlash && ch == '/'))
+            {
+                encoded += static_cast<char>(ch);
+            }
+            else
+            {
+                encoded += '%';
+                encoded += static_cast<char>(utils::toHex(ch >> 4));
+                encoded += static_cast<char>(utils::toHex(ch & 0x0F));
+            }
+        }
+        return encoded;
+    }
+
+}
+
+
 Service::Service()
 {
     m_serverIp = Config::GetInstance().getServerIp();
@@ -29,6 +85,14 @@ void Service::GenHandler(evhttp_request *, void *)
 }
 
 void Service::Upload(evhttp_request *, void *)
+{
+}
+
+void Service::ListShow(evhttp_request *, void *)
+{
+}
+
+void Service::Download(evhttp_request *, void *)
 {
 }
 
@@ -84,12 +148,34 @@ std::string Service::FormatFileSize(uint64_t bytes)
     return stream.str();
 }
 
-std::string Service::GenerateModernFileList(const std::vector<FileMetadata> &)
+std::string Service::GenerateFileListHtml(const std::vector<FileMetadata> &files)
 {
-}
+    std::ostringstream stream;
+    stream << "<div class='file-list'><h3>已上传文件</h3>";
 
-void Service::ListShow(evhttp_request *, void *)
-{
+    const auto compressedDir = Config::GetInstance().getCompressedFilesDirPath();
+    for (const auto &file : files)
+    {
+        const auto path = file.m_absoluteFilePath.lexically_normal();
+        // 按配置的实际目录判断存储类型，避免根据文件名中的 compressed 等字样误判。
+        const bool isCompressed = path == (compressedDir / path.filename()).lexically_normal();
+
+        stream << "<div class='file-item'>"
+               << "<div class='file-info'>"
+               << "<span>📄" << escapeHtml(path.filename().string()) << "</span>"
+               << "<span class='file-type'>" << (isCompressed ? "压缩存储" : "普通存储") << "</span>"
+               << "<span>存储大小：" << FormatFileSize(file.m_fileSize) << "</span>"
+               << "<span>" << FormatFileTime(file.m_mtime) << "</span>"
+               << "</div>"
+               << "<button type='button' onclick=\"window.location='" << percentEncode(file.m_url, true) << "'\">⬇️ 下载</button>"
+               << "</div>";
+    }
+
+    stream << "</div>";
+    if (stream.fail()) throw std::runtime_error("GenerateFileListHtml(): file list formatting failed");
+
+
+    return stream.str();
 }
 
 std::string Service::GetETag(const FileMetadata &info)
@@ -105,20 +191,7 @@ std::string Service::GetETag(const FileMetadata &info)
     // 例如文件名是 "a b.txt"，原样拼接：ETag: "a b.txt-1024-123"，编码以后：ETag: "a%20b.txt-1024-123"。
     // HTTP 规范要求 ETag 的标签部分由双引号包裹，所以返回的字符串首尾加上 ""。
     std::string etag = "\"";
-    for (unsigned char ch : info.m_absoluteFilePath.filename().string())
-    {
-        if ((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '-' || ch == '_' || ch == '.' || ch == '~')
-        {
-            etag += static_cast<char>(ch);
-        }
-        else
-        {
-            etag += '%';
-            etag += static_cast<char>(utils::toHex(ch >> 4));
-            etag += static_cast<char>(utils::toHex(ch & 0x0F));
-        }
-    }
-
+    etag += percentEncode(info.m_absoluteFilePath.filename().string(), false);
     etag += "-";
     etag += std::to_string(info.m_fileSize);
     etag += "-";
@@ -127,10 +200,6 @@ std::string Service::GetETag(const FileMetadata &info)
 
 
     return etag;
-}
-
-void Service::Download(evhttp_request *, void *)
-{
 }
 
 
