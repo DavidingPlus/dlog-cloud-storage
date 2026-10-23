@@ -246,6 +246,35 @@ TEST(CommonTests, PercentEncodeHandlesLongMixedInput)
 }
 
 
+// 两个公开封装分别验证其路径语义，不只和 percentEncode() 的返回值比较。
+
+TEST(CommonTests, UrlEncodePreservesEmptyPathsSlashesAndDotSegments)
+{
+    const std::string paths[] = {"", "/", "//download///a.txt", "../download/./a.txt", "a-_.~09AZaz.txt"};
+
+    for (const auto &path : paths)
+    {
+        SCOPED_TRACE(path);
+        EXPECT_EQ(utils::urlEncode(path), path);
+    }
+}
+
+TEST(CommonTests, UrlEncodeEncodesFilenameCharactersWithinPaths)
+{
+    EXPECT_EQ(utils::urlEncode(u8"/download/云存储/a b+c%20?#.txt"),
+              "/download/%E4%BA%91%E5%AD%98%E5%82%A8/a%20b%2Bc%2520%3F%23.txt");
+}
+
+TEST(CommonTests, UrlEncodeEscapesBackslashesInsteadOfTreatingThemAsSeparators)
+{
+    EXPECT_EQ(utils::urlEncode(R"(\download\a b.txt)"), "%5Cdownload%5Ca%20b.txt");
+}
+
+TEST(CommonTests, UrlEncodeMatchesExpectedEncodingForEveryByte)
+{
+    EXPECT_EQ(utils::urlEncode(allByteValues()), percentEncodedAllBytes(true));
+}
+
 // URL 解码与编码后的往返。
 
 TEST(CommonTests, UrlDecodePreservesUnescapedText)
