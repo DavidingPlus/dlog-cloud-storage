@@ -65,7 +65,7 @@ std::string Service::FormatFileTime(std::filesystem::file_time_type t)
 std::string Service::FormatFileSize(uint64_t bytes)
 {
     // 每 1024 字节进一档，最大使用 GB，显示时固定保留两位小数。
-    constexpr char *units[] = {"B", "KB", "MB", "GB"};
+    constexpr const char *units[] = {"B", "KB", "MB", "GB"};
     int index = 0;
     double size = static_cast<double>(bytes);
 
