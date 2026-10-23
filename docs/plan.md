@@ -341,9 +341,9 @@ rtk xmake test -y tests/server
 
 上述先修改内存再写盘的流程是当前实现行为。接入 HTTP 上传时，按第 6.1 节第 4 步补齐失败时保留原有状态的提交流程，仍沿用内存表与 JSON 全量保存模型。
 
-路径约定：配置文件、存储文件和元数据持久化文件的相对路径都以可执行文件所在目录为基准，绝对路径按原路径访问。`config/server.conf` 通过 `compressed_files_dir`、`uncompressed_files_dir` 和 `metadata_file` 提供相对路径，`Config` 构造时通过 `readConfig()` 将它们解析为绝对路径，再次读取配置时沿用相同规则。`FileMetadata::FromFile()` 始终保存解析后的绝对路径；持久化字段 `absolute_file_path` 保存文件绝对路径，`loadFromDisk()` 直接恢复。`insert()`、`update()` 按 `FileMetadata` 已保存绝对路径的约定使用元数据。`DataManager` 构造时直接保存 `Config::getMetadataFilePath()` 返回的绝对路径，加载和保存使用同一路径，不受工作目录变化影响。
+路径约定：配置文件、存储文件和元数据持久化文件的相对路径都以可执行文件所在目录为基准。`config/server.conf` 通过 `compressed_files_dir`、`uncompressed_files_dir` 和 `metadata_file` 提供路径，`Config` 构造时通过 `readConfig()` 将相对路径解析为绝对路径，并对解析结果和显式配置的绝对路径统一调用 `lexically_normal()`，再次读取配置时沿用相同规则。`FileMetadata::FromFile()` 始终保存经过词法标准化的绝对路径；持久化字段 `absolute_file_path` 保存文件绝对路径。`insert()`、`update()` 按 `FileMetadata` 已保存绝对路径的约定接收元数据，并在入表前进行词法标准化；`loadFromDisk()` 复用 `insertWithoutPersist()` 标准化历史记录，仅在后续持久化时才将标准化后的路径写回 JSON。`DataManager` 构造时直接保存 `Config::getMetadataFilePath()` 返回的绝对路径，加载和保存使用同一路径，不受工作目录变化影响。
 
-`Config` 中的三个文件系统路径、`FileMetadata::m_absoluteFilePath`、`DataManager::m_metadataFilePath` 和相关路径入参统一使用 `std::filesystem::path`。服务端固定运行于 Linux，文件名和 JSON 路径统一约定使用 UTF-8；读入时直接将字符串赋给 `path`，写出时调用 `string()`。`getOneByFilePath()` 将查询路径按可执行文件目录解析为绝对路径后，直接与记录中的绝对路径比较。暂不处理 `.`、`..` 等写法差异。该查询不要求实际文件存在，也不解析符号链接。
+`Config` 中的三个文件系统路径、`FileMetadata::m_absoluteFilePath`、`DataManager::m_metadataFilePath` 和相关路径入参统一使用 `std::filesystem::path`。服务端固定运行于 Linux，文件名和 JSON 路径统一约定使用 UTF-8；读入时将字符串赋给 `path`，写出时调用 `string()`。`getOneByFilePath()` 将查询路径按可执行文件目录解析为绝对路径，再调用 `lexically_normal()`，与记录中的标准化路径比较，支持 `.`、`..` 等写法差异。该查询不要求实际文件存在，也不解析符号链接。词法标准化仅处理路径表示；若路径中存在符号链接，消去其后的 `..` 可能改变实际访问目标。
 
 这套流程处理的是文件元数据，上传文件的实际内容仍通过各自的存储路径读写。它便于理解和实现，但内存占用随记录数量增长，每次修改也需要序列化和写入全部记录。后续结合元数据数量、修改频率、加载耗时、内存占用和保存耗时决定是否调整。
 
