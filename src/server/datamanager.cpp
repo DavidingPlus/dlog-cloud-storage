@@ -15,7 +15,7 @@ DLOG_CLOUD_STORAGE_NAMESPACE_BEGIN(server)
 FileMetadata FileMetadata::FromFile(const std::filesystem::path &filePath)
 {
     // XXX path 的 / 运算符规则：右侧为绝对路径时，直接使用右侧绝对路径；右侧为相对路径时，拼接到左侧的可执行文件目录形成新绝对路径。
-    auto absoluteFilePath = utils::executableDirectory() / filePath;
+    auto absoluteFilePath = (utils::executableDirectory() / filePath).lexically_normal();
     utils::FileUtil file(absoluteFilePath);
     if (!file.exists()) throw std::filesystem::filesystem_error("FileMetadata::FromFile(): file does not exist", absoluteFilePath, std::make_error_code(std::errc::no_such_file_or_directory));
 

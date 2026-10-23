@@ -205,6 +205,25 @@ TEST_F(DataManagerTests, FileMetadataUsesExecutableDirectoryAfterWorkingDirector
     }
 }
 
+TEST_F(DataManagerTests, FileMetadataNormalizesRelativeAndAbsolutePaths)
+{
+    const auto file = m_directory / u8"报告 一.txt";
+    const auto relativeFile = m_directory.filename() / "." / "staging" / ".." / file.filename();
+    fs::create_directory(m_directory / "staging");
+    utils::FileUtil(file).setContent("hello");
+
+    for (const auto &filePath : {relativeFile, utils::executableDirectory() / relativeFile})
+    {
+        SCOPED_TRACE(filePath);
+        const auto info = server::FileMetadata::FromFile(filePath);
+
+        EXPECT_EQ(info.m_absoluteFilePath, file);
+        EXPECT_EQ(info.m_fileSize, 5U);
+        EXPECT_EQ(info.m_mtime, fs::last_write_time(file));
+        EXPECT_EQ(info.m_url, server::Config::GetInstance().getDownloadPrefix() + u8"报告 一.txt");
+    }
+}
+
 TEST_F(DataManagerTests, FileMetadataDoesNotFallBackToWorkingDirectory)
 {
     const auto relativeFile = m_directory.filename() / "missing.txt";
