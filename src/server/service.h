@@ -57,7 +57,7 @@ private:
     // 查询元数据并返回包含文件列表的 HTML 页面。
     static void ListShow(evhttp_request *req, void *arg);
 
-    // 根据文件元数据生成 ETag。
+    // 根据文件元数据生成版本标识，用于缓存验证和断点续传。
     static std::string GetETag(const FileMetadata &info);
 
     // 下载处理：查询元数据，读取或解压后返回原始文件内容。

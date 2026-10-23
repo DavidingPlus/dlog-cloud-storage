@@ -1,6 +1,7 @@
 #include "server/service.h"
 
 #include "server/config.h"
+#include "utils/common.h"
 
 #include <chrono>
 #include <ctime>
@@ -91,8 +92,41 @@ void Service::ListShow(evhttp_request *, void *)
 {
 }
 
-std::string Service::GetETag(const FileMetadata &)
+std::string Service::GetETag(const FileMetadata &info)
 {
+    // ETag 是服务端为文件生成的版本标识，客户端和服务端通过它判断是否需要重新传输文件。
+    // 1. 首次下载时，服务端返回文件内容和 ETag；客户端可以将正文与 ETag 一起缓存。
+    // 2. 本地副本可用、再次需要验证版本时，客户端通过请求头把保存的 ETag 带回服务端。
+    // 3. 服务端比较新旧 ETag：相同则返回“未修改”（304），不再发送正文，客户端复用本地缓存。
+    // 4. 如果 ETag 不同，服务端返回新文件和新 ETag，客户端更新保存的内容和标签。
+    // 5. 断点续传时，也用 ETag 确认版本一致后再传输剩余部分；版本改变则重新下载，避免拼接新旧内容。
+
+    // 文件名中的特殊字节采用百分号编码，保证标签可以直接用于响应头。
+    // 例如文件名是 "a b.txt"，原样拼接：ETag: "a b.txt-1024-123"，编码以后：ETag: "a%20b.txt-1024-123"。
+    // HTTP 规范要求 ETag 的标签部分由双引号包裹，所以返回的字符串首尾加上 ""。
+    std::string etag = "\"";
+    for (unsigned char ch : info.m_absoluteFilePath.filename().string())
+    {
+        if ((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '-' || ch == '_' || ch == '.' || ch == '~')
+        {
+            etag += static_cast<char>(ch);
+        }
+        else
+        {
+            etag += '%';
+            etag += static_cast<char>(utils::toHex(ch >> 4));
+            etag += static_cast<char>(utils::toHex(ch & 0x0F));
+        }
+    }
+
+    etag += "-";
+    etag += std::to_string(info.m_fileSize);
+    etag += "-";
+    etag += std::to_string(info.m_mtime.time_since_epoch().count());
+    etag += '"';
+
+
+    return etag;
 }
 
 void Service::Download(evhttp_request *, void *)
