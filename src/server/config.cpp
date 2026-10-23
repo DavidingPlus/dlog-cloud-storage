@@ -52,7 +52,13 @@ void Config::readConfig()
     m_serverIp = root["server_ip"].asString();
     m_serverPort = root["server_port"].asInt();
     m_downloadPrefix = downloadPrefix;
-    // 配置中的相对路径以可执行文件所在目录为基准，绝对路径直接使用。
+    // 一些路径接口对比，示例见 snippet/FilesystemPathTest。
+    // 1. lexically_normal()：按词法规则化简 .、可消去的 .. 和多余分隔符，相对路径仍为相对路径。
+    // 2. lexically_relative(base)：计算从 base 到当前路径的相对路径，无法计算时返回空路径。
+    // 3. lexically_proximate(base)：同上，但无法计算时返回当前路径。
+    // 三个 lexically_* 接口均不访问文件系统、不解析符号链接；后两个不会先标准化路径。
+    // 4. std::filesystem::canonical(p)：得到解析符号链接后的规范绝对路径，要求路径存在。
+    // 5. std::filesystem::weakly_canonical(p)：解析已有前缀中的符号链接，允许后缀不存在，再对结果做词法标准化。
     m_compressedFilesDirPath = (executableDir / root["compressed_files_dir"].asString()).lexically_normal();
     m_uncompressedFilesDirPath = (executableDir / root["uncompressed_files_dir"].asString()).lexically_normal();
     m_metadataFilePath = (executableDir / root["metadata_file"].asString()).lexically_normal();
