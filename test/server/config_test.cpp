@@ -123,9 +123,9 @@ namespace
             EXPECT_TRUE(config.getCompressedFilesDirPath().is_absolute());
             EXPECT_TRUE(config.getUncompressedFilesDirPath().is_absolute());
             EXPECT_TRUE(config.getMetadataFilePath().is_absolute());
-            EXPECT_EQ(config.getCompressedFilesDirPath(), utils::executableDirectory() / root["compressed_files_dir"].asString());
-            EXPECT_EQ(config.getUncompressedFilesDirPath(), utils::executableDirectory() / root["uncompressed_files_dir"].asString());
-            EXPECT_EQ(config.getMetadataFilePath(), utils::executableDirectory() / root["metadata_file"].asString());
+            EXPECT_EQ(config.getCompressedFilesDirPath(), (utils::executableDirectory() / root["compressed_files_dir"].asString()).lexically_normal());
+            EXPECT_EQ(config.getUncompressedFilesDirPath(), (utils::executableDirectory() / root["uncompressed_files_dir"].asString()).lexically_normal());
+            EXPECT_EQ(config.getMetadataFilePath(), (utils::executableDirectory() / root["metadata_file"].asString()).lexically_normal());
             EXPECT_EQ(config.getBundleFormat(), root["bundle_format"].asInt());
         }
 

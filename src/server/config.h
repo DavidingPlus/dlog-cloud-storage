@@ -22,7 +22,7 @@ public:
     static Config &GetInstance();
 
     // 从可执行文件所在目录的 config/server.conf 读取配置，仅在启动阶段调用。字段校验失败抛出 std::invalid_argument。
-    // 三个文件系统路径均以可执行文件所在目录为基准解析为绝对路径。
+    // 三个文件系统路径均以可执行文件所在目录为基准解析为绝对路径，并做词法标准化。
     // XMake 流程会自动将项目根目录的 config/server.conf 拷贝到可执行文件的目录。
     void readConfig();
 

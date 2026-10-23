@@ -53,9 +53,9 @@ void Config::readConfig()
     m_serverPort = root["server_port"].asInt();
     m_downloadPrefix = downloadPrefix;
     // 配置中的相对路径以可执行文件所在目录为基准，绝对路径直接使用。
-    m_compressedFilesDirPath = executableDir / root["compressed_files_dir"].asString();
-    m_uncompressedFilesDirPath = executableDir / root["uncompressed_files_dir"].asString();
-    m_metadataFilePath = executableDir / root["metadata_file"].asString();
+    m_compressedFilesDirPath = (executableDir / root["compressed_files_dir"].asString()).lexically_normal();
+    m_uncompressedFilesDirPath = (executableDir / root["uncompressed_files_dir"].asString()).lexically_normal();
+    m_metadataFilePath = (executableDir / root["metadata_file"].asString()).lexically_normal();
     m_bundleFormat = root["bundle_format"].asInt();
 }
 
