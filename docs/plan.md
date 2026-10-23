@@ -191,7 +191,7 @@ enum class StorageType
 | `bool RunModule()` | 创建监听和事件循环，返回运行结果 |
 | `static GenHandler(evhttp_request *, void *)` | 通用请求回调，解析路径并分发请求 |
 | `static Upload(evhttp_request *, void *)` | 解析请求头和正文，保存文件并提交元数据 |
-| `static TimetoStr(std::filesystem::file_time_type)` | 直接接收文件修改时间，在函数内部完成日历时间转换和格式化 |
+| `static FormatFileTime(std::filesystem::file_time_type)` | 直接接收文件修改时间，在函数内部完成日历时间转换和格式化 |
 | `static generateModernFileList(const std::vector<FileMetadata> &)` | 生成文件列表 HTML |
 | `static formatSize(std::uint64_t)` | 格式化文件大小 |
 | `static ListShow(evhttp_request *, void *)` | 查询元数据并返回包含文件列表的 HTML 页面 |

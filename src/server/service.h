@@ -45,8 +45,8 @@ private:
     // 上传处理：读取 FileName、StorageType 请求头和原始文件字节。
     static void Upload(evhttp_request *req, void *arg);
 
-    // 格式化文件修改时间；文件系统时钟到日历时间的转换在函数内部完成。
-    static std::string TimetoStr(std::filesystem::file_time_type t);
+    // 按服务端本地时区格式化为 YYYY-MM-DD HH:MM:SS，时钟转换在函数内部完成。
+    static std::string FormatFileTime(std::filesystem::file_time_type t);
 
     // 根据元数据生成文件列表 HTML。
     static std::string GenerateModernFileList(const std::vector<FileMetadata> &files);
