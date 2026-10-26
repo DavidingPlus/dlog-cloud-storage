@@ -349,3 +349,196 @@ TEST_F(ServiceETagTests, ConcurrentCallsAreStableAndDoNotShareOutputBuffers)
                                         { return Access::etag(info); }));
     for (auto &result : results) EXPECT_EQ(result.get(), "\"a.txt-1024-123456\"");
 }
+
+TEST_F(ServiceHttpTests, ReturnsAnHtmlPageForEmptyMetadata)
+{
+    server::Service service;
+    LocalHttpServer http(service);
+    const auto response = http.get("/");
+    EXPECT_EQ(response.m_code, HTTP_OK);
+    EXPECT_EQ(response.m_contentType, "text/html;charset=utf-8");
+    EXPECT_EQ(response.m_body, "<!DOCTYPE html>\n<html><body><div class='file-list'><h3>已上传文件</h3></div><script>const backend = 'http://127.0.0.2:18081';</script></body></html>\n");
+}
+
+TEST_F(ServiceHttpTests, IncludesEveryStoredFileWithoutDependingOnMapOrder)
+{
+    const ScopedTimezone timezone("UTC0");
+    writeMetadata({makeInfo("ordinary.txt"), makeInfo("archived.txt", 1024, true)});
+    server::Service service;
+    LocalHttpServer http(service);
+    const auto response = http.get("/");
+    ASSERT_EQ(response.m_code, HTTP_OK);
+    EXPECT_EQ(Count(response.m_body, "class='file-item'"), 2U);
+    EXPECT_NE(response.m_body.find("📄ordinary.txt"), std::string::npos);
+    EXPECT_NE(response.m_body.find("📄archived.txt"), std::string::npos);
+    EXPECT_NE(response.m_body.find("未压缩存储"), std::string::npos);
+    EXPECT_NE(response.m_body.find("<span class='file-type'>压缩存储</span>"), std::string::npos);
+    EXPECT_NE(response.m_body.find("2000-01-01 00:00:00"), std::string::npos);
+    EXPECT_EQ(response.m_body.find("{{FILE_LIST}}"), std::string::npos);
+    EXPECT_EQ(response.m_body.find("{{BACKEND_URL}}"), std::string::npos);
+}
+
+TEST_F(ServiceHttpTests, ReplacesEveryOccurrenceOfBothTemplatePlaceholders)
+{
+    writeTemplate("{{FILE_LIST}}|{{BACKEND_URL}}|{{FILE_LIST}}|{{BACKEND_URL}}");
+    server::Service service;
+    LocalHttpServer http(service);
+    const auto body = http.get("/").m_body;
+    EXPECT_EQ(Count(body, "<h3>已上传文件</h3>"), 2U);
+    EXPECT_EQ(Count(body, "http://127.0.0.2:18081"), 2U);
+    EXPECT_EQ(body.find("{{"), std::string::npos);
+}
+
+TEST_F(ServiceHttpTests, PreservesTemplatesWithoutPlaceholders)
+{
+    const std::string page = "<!DOCTYPE html>\r\n<p>静态内容 $&</p>\n";
+    writeTemplate(page);
+    server::Service service;
+    LocalHttpServer http(service);
+    EXPECT_EQ(http.get("/").m_body, page);
+}
+
+TEST_F(ServiceHttpTests, PreservesEmbeddedNulsInTheTemplateBody)
+{
+    const std::string page("head\0tail", 9);
+    writeTemplate(page);
+    server::Service service;
+    LocalHttpServer http(service);
+    EXPECT_EQ(http.get("/").m_body, page);
+}
+
+TEST_F(ServiceHttpTests, AcceptsAnEmptyTemplate)
+{
+    writeTemplate("");
+    server::Service service;
+    LocalHttpServer http(service);
+    const auto response = http.get("/");
+    EXPECT_EQ(response.m_code, HTTP_OK);
+    EXPECT_TRUE(response.m_body.empty());
+    EXPECT_EQ(response.m_contentType, "text/html;charset=utf-8");
+}
+
+TEST_F(ServiceHttpTests, ReadsTheTemplateBesideTheExecutableAfterWorkingDirectoryChanges)
+{
+    fs::create_directories(m_directory / "web");
+    utils::FileUtil(m_directory / "web/template.html").setContent("wrong template from current directory");
+    fs::current_path(m_directory);
+    server::Service service;
+    LocalHttpServer http(service);
+    const auto body = http.get("/").m_body;
+    EXPECT_NE(body.find("<!DOCTYPE html>"), std::string::npos);
+    EXPECT_EQ(body.find("wrong template"), std::string::npos);
+}
+
+TEST_F(ServiceHttpTests, UsesTheServiceMetadataSnapshotInsteadOfReloadingTheFilePerRequest)
+{
+    writeMetadata({makeInfo("before.txt")});
+    server::Service service;
+    writeMetadata({makeInfo("after.txt")});
+    LocalHttpServer http(service);
+    const auto body = http.get("/").m_body;
+    EXPECT_NE(body.find("📄before.txt"), std::string::npos);
+    EXPECT_EQ(body.find("📄after.txt"), std::string::npos);
+}
+
+TEST_F(ServiceHttpTests, UsesTheServicePassedAsCallbackContext)
+{
+    server::Service first;
+    server::Service second;
+    Access::data(first).insert(makeInfo("first.txt"));
+    Access::data(second).insert(makeInfo("second.txt"));
+    LocalHttpServer firstHttp(first);
+    LocalHttpServer secondHttp(second);
+    const auto firstBody = firstHttp.get("/").m_body;
+    const auto secondBody = secondHttp.get("/").m_body;
+    EXPECT_NE(firstBody.find("📄first.txt"), std::string::npos);
+    EXPECT_EQ(firstBody.find("📄second.txt"), std::string::npos);
+    EXPECT_NE(secondBody.find("📄second.txt"), std::string::npos);
+    EXPECT_EQ(secondBody.find("📄first.txt"), std::string::npos);
+}
+
+TEST_F(ServiceHttpTests, ReadsTheLatestTemplateOnEachRequest)
+{
+    server::Service service;
+    LocalHttpServer http(service);
+    writeTemplate("first version");
+    EXPECT_EQ(http.get("/").m_body, "first version");
+    writeTemplate("second version");
+    EXPECT_EQ(http.get("/").m_body, "second version");
+}
+
+TEST_F(ServiceHttpTests, RendersTheRealApplicationTemplate)
+{
+    writeTemplate(m_originalTemplate);
+    writeMetadata({makeInfo(u8"中文 &.txt")});
+    server::Service service;
+    LocalHttpServer http(service);
+    const auto response = http.get("/");
+    ASSERT_EQ(response.m_code, HTTP_OK);
+    EXPECT_NE(response.m_body.find("<!DOCTYPE html>"), std::string::npos);
+    EXPECT_NE(response.m_body.find("value=\"uncompressed\" checked"), std::string::npos);
+    EXPECT_NE(response.m_body.find("value=\"compressed\""), std::string::npos);
+    EXPECT_NE(response.m_body.find(u8"📄中文 &amp;.txt"), std::string::npos);
+    EXPECT_NE(response.m_body.find("/download/%E4%B8%AD%E6%96%87%20%26.txt"), std::string::npos);
+    EXPECT_EQ(response.m_body.find("{{FILE_LIST}}"), std::string::npos);
+    EXPECT_EQ(response.m_body.find("{{BACKEND_URL}}"), std::string::npos);
+}
+
+TEST_F(ServiceHttpTests, PropagatesMissingTemplateErrorsBeforeSendingAReply)
+{
+    server::Service service;
+    auto request = MakeRequest();
+    fs::remove(m_templateFile);
+    EXPECT_THROW(Access::showFileList(request.get(), service), fs::filesystem_error);
+    EXPECT_EQ(evbuffer_get_length(evhttp_request_get_output_buffer(request.get())), 0U);
+}
+
+TEST_F(ServiceHttpTests, RejectsADirectoryAtTheTemplatePath)
+{
+    server::Service service;
+    auto request = MakeRequest();
+    fs::remove(m_templateFile);
+    fs::create_directory(m_templateFile);
+    EXPECT_THROW(Access::showFileList(request.get(), service), fs::filesystem_error);
+}
+
+TEST_F(ServiceHttpTests, PropagatesUnreadableTemplateErrors)
+{
+    server::Service service;
+    auto request = MakeRequest();
+    fs::permissions(m_templateFile, fs::perms::none);
+    std::ifstream probe(m_templateFile);
+    if (probe.is_open()) GTEST_SKIP() << "The current user can read files without read permission";
+    EXPECT_THROW(Access::showFileList(request.get(), service), std::ios_base::failure);
+}
+
+// 以下两个回归用例验证文件名按字面显示，不应成为模板替换指令。
+TEST_F(ServiceHttpTests, PreservesDollarSequencesInFilenames)
+{
+    writeMetadata({makeInfo("price$&$1$$$`$'.txt")});
+    server::Service service;
+    LocalHttpServer http(service);
+    const auto body = http.get("/").m_body;
+    EXPECT_NE(body.find("📄price$&amp;$1$$$`$&#39;.txt"), std::string::npos);
+    EXPECT_NE(body.find("/download/price%24%26%241%24%24%24%60%24%27.txt"), std::string::npos);
+}
+
+TEST_F(ServiceHttpTests, DoesNotExpandBackendPlaceholdersInsideFilenames)
+{
+    writeMetadata({makeInfo("{{BACKEND_URL}}.txt")});
+    server::Service service;
+    LocalHttpServer http(service);
+    const auto body = http.get("/").m_body;
+    EXPECT_NE(body.find("📄{{BACKEND_URL}}.txt"), std::string::npos);
+    EXPECT_EQ(body.find("📄http://"), std::string::npos);
+}
+
+TEST_F(ServiceHttpTests, DoesNotRecursivelyExpandFileListPlaceholdersInsideFilenames)
+{
+    writeMetadata({makeInfo("{{FILE_LIST}}.txt")});
+    server::Service service;
+    LocalHttpServer http(service);
+    const auto body = http.get("/").m_body;
+    EXPECT_NE(body.find("📄{{FILE_LIST}}.txt"), std::string::npos);
+    EXPECT_EQ(Count(body, "class='file-item'"), 1U);
+}

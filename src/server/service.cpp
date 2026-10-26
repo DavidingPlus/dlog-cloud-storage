@@ -96,10 +96,18 @@ void Service::ShowFileList(evhttp_request *req, void *arg)
     // 读取可执行文件旁 web 目录中的页面模板的内容。
     std::string content = utils::FileUtil(utils::executableDirectory() / "web" / "template.html").getContent();
 
-    // 替换文件列表进 HTML。
-    content = std::regex_replace(content, std::regex("\\{\\{FILE_LIST\\}\\}"), GenerateFileListHtml(files));
-    // 替换服务器地址进 HTML。
+    // 先替换服务器地址，避免把随后插入的文件名中的同名文本再次当作占位符。
     content = std::regex_replace(content, std::regex("\\{\\{BACKEND_URL\\}\\}"), "http://" + Config::GetInstance().getServerIp() + ":" + std::to_string(Config::GetInstance().getServerPort()));
+
+    // regex_replace() 用 $$ 表示字面的 $，防止文件列表中的 $& 等内容被解释成替换指令。
+    std::string fileListHtml;
+    for (const char ch : GenerateFileListHtml(files))
+    {
+        if ('$' == ch) fileListHtml += '$';
+
+        fileListHtml += ch;
+    }
+    content = std::regex_replace(content, std::regex("\\{\\{FILE_LIST\\}\\}"), fileListHtml);
 
     // 写入请求自带的响应缓冲区，设置 HTML 类型并返回 200。
     evbuffer *buf = evhttp_request_get_output_buffer(req);
