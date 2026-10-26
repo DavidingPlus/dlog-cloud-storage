@@ -70,8 +70,8 @@ flowchart LR
 | `src/utils/fileutil.h/.cpp`、`src/utils/common.h/.cpp` | 已实现路径定位、二进制读写、目录操作、压缩解压、URL 编解码与 HTML 文本转义；文件名校验等按需补充 |
 | `src/server/datamanager.h/.cpp` | 已实现 `FileMetadata`、内存查询、JSON 持久化和启动恢复 |
 | `src/server/service.h/.cpp` | 待实现 libevent 生命周期、路由和请求处理，以及上传存储类型枚举 |
-| `web/index.html` | 文件选择、上传、列表和下载链接 |
-| `config/server.conf` | 已有 JSON 运行配置，区别于 XMake 生成的编译配置头文件 |
+| `src/server/web/template.html` | 服务端页面模板，包含文件选择、上传、列表和下载链接 |
+| `src/server/config/server.conf` | 服务端 JSON 运行配置，区别于 XMake 生成的编译配置头文件 |
 
 第一版使用单个 HTTP 事件循环，在 HTTP 回调中同步完成文件处理。继续使用当前 `DataManager` 的内存表和读写锁；后续引入业务工作线程时，再统一设计文件操作、持久化和请求生命周期之间的并发关系。
 
@@ -187,24 +187,26 @@ enum class StorageType
 
 | 建议接口 | 职责 |
 | --- | --- |
-| `Service()` | 无参构造，读取监听地址、端口和下载前缀 |
+| `Service()` | 无参构造，读取服务配置并构造、加载成员元数据管理器 |
 | `void run()` | 按配置创建监听、注册通用回调并运行事件循环，失败时抛出异常 |
 | `static GenericCallback(evhttp_request *, void *)` | 通用请求回调，解析路径并分发请求 |
 | `static Upload(evhttp_request *, void *)` | 解析请求头和正文，保存文件并提交元数据 |
 | `static FormatFileTime(std::filesystem::file_time_type)` | 直接接收文件修改时间，在函数内部完成日历时间转换和格式化 |
 | `static GenerateFileListHtml(const std::vector<FileMetadata> &)` | 生成文件列表 HTML |
 | `static FormatFileSize(uint64_t)` | 格式化文件大小 |
-| `static ListShow(evhttp_request *, void *)` | 查询元数据并返回包含文件列表的 HTML 页面 |
+| `static ShowFileList(evhttp_request *, void *)` | 查询元数据并返回包含文件列表的 HTML 页面 |
 | `static GetETag(const FileMetadata &)` | 根据元数据生成 ETag |
 | `static Download(evhttp_request *, void *)` | 按请求路径查找元数据，读取或解压后返回原始字节 |
 
-请求处理函数统一保留参考实现的 `(evhttp_request *, void *)` 参数，不预先拆分实例分发函数或注入 `DataManager`。`run()` 已实现事件循环和 HTTP 服务创建、配置地址与端口监听，以及通用回调注册；注册 `GenericCallback` 时以 `this` 作为上下文。资源以智能指针管理，按 HTTP 服务、事件循环的顺序自动释放；正常结束直接返回，创建事件循环或 HTTP 服务、绑定监听、运行事件循环失败时抛出 `std::runtime_error`。暂不添加信号处理，停止流程后续再补充。文件时间、文件大小、列表 HTML 和 ETag 辅助函数已实现；`GenericCallback()` 已实现请求分发，`Upload()`、`ListShow()`、`Download()` 仍为空实现；断点下载仍按第 7 节后续实施。
+请求处理函数统一保留参考实现的 `(evhttp_request *, void *)` 参数，不预先拆分实例分发函数或注入 `DataManager`。`run()` 已实现事件循环和 HTTP 服务创建、配置地址与端口监听，以及通用回调注册；注册 `GenericCallback` 时以 `this` 作为上下文。资源以智能指针管理，按 HTTP 服务、事件循环的顺序自动释放；正常结束直接返回，创建事件循环或 HTTP 服务、绑定监听、运行事件循环失败时抛出 `std::runtime_error`。暂不添加信号处理，停止流程后续再补充。文件时间、文件大小、列表 HTML 和 ETag 辅助函数已实现；`GenericCallback()` 已实现请求分发，`ShowFileList()` 已实现页面响应，`Upload()`、`Download()` 仍为空实现；断点下载仍按第 7 节后续实施。
 
-本节骨架先沿用参考实现的 `ListShow()` 页面生成职责；上方协议和第 6 节中的独立 `/files` 接口作为原计划保留，后续确定是否拆分时再统一调整。
+本节骨架先沿用参考实现的 `ShowFileList()` 页面生成职责；上方协议和第 6 节中的独立 `/files` 接口作为原计划保留，后续确定是否拆分时再统一调整。
 
-`GenericCallback()` 当前按参考流程提取 URI 路径并进行 URL 解码，再依次判断：路径中包含配置下载前缀时调用 `Download()`，路径等于 `/upload` 时调用 `Upload()`，路径等于 `/` 时调用 `ListShow()`，其余返回 404。请求方法校验、回调异常处理和独立 `/files` 接口后续再补充。下载接入时再统一路径传递，避免对已解码的字符串重复解码。
+`Service` 通过对象成员 `DataManager m_dataManager` 拥有元数据管理器，其生命周期随服务对象管理，构造时加载持久化文件。`ShowFileList()` 通过回调参数 `arg` 取回当前 `Service`，调用 `m_dataManager.getAll()`，读取可执行文件旁的 `web/template.html`，用 `std::regex_replace()` 替换 `{{FILE_LIST}}` 和 `{{BACKEND_URL}}`，最后写入请求的输出缓冲区，以 `text/html;charset=utf-8` 返回 HTTP 200。后端地址由配置中的 IP 和端口拼接。
 
-启动阶段按“配置与日志 → 数据目录及缺失的元数据文件初始化 → `DataManager` → `Service::run()`”组织。元数据访问方式、回调异常处理和服务停止流程后续再补齐，当前不额外增加类接口；退出后按第 4 节关闭日志。
+`GenericCallback()` 当前按参考流程提取 URI 路径并进行 URL 解码，再依次判断：路径中包含配置下载前缀时调用 `Download()`，路径等于 `/upload` 时调用 `Upload()`，路径等于 `/` 时调用 `ShowFileList()`，其余返回 404。请求方法校验、回调异常处理和独立 `/files` 接口后续再补充。下载接入时再统一路径传递，避免对已解码的字符串重复解码。
+
+启动阶段按“配置与日志 → 数据目录及缺失的元数据文件初始化 → 构造 `Service`（同时构造并加载成员 `DataManager`）→ `Service::run()`”组织。元数据文件必须在构造 `Service` 前准备好，缺失或加载失败会使构造抛出异常；当前 `main()` 尚未接入此启动流程。回调异常处理和服务停止流程后续再补齐，当前不额外增加类接口；退出后按第 4 节关闭日志。
 
 TODO：后续补充 SIGINT/SIGTERM 的正常停止流程，包括停止接收新请求、在途上传/下载请求的收尾及退出事件循环；当前阶段暂不实现。
 
@@ -231,7 +233,7 @@ TODO：后续补充 SIGINT/SIGTERM 的正常停止流程，包括停止接收新
 
 #### 第 3 步：配置与文件工具
 
-1. 复用已实现的 `Config`、JsonCpp 和 `config/server.conf`，按现有字段校验与路径解析规则读取配置。
+1. 复用已实现的 `Config`、JsonCpp 和 `src/server/config/server.conf`，按现有字段校验与路径解析规则读取配置。
 2. 复用服务地址、端口、下载前缀、两个存储目录、元数据文件和压缩格式；页面路径、日志路径和上传大小限制按接入需求补充。
 3. 业务文件的相对路径统一以可执行文件所在目录为基准；创建所需目录。
 4. 实现二进制读写和文件名校验。先限制小文件，例如最大 16 MiB，允许合法的零字节文件。
@@ -275,7 +277,7 @@ HTTP 上传接入前需要补齐失败状态处理：当前 `DataManager::insert
 
 #### 第 7 步：浏览器页面
 
-1. `GET /` 返回 `web/index.html`，按可执行文件目录定位；XMake 配置、安装和打包时同步页面资源。
+1. `GET /` 返回填充后的页面模板，源码位于 `src/server/web/template.html`，运行时按可执行文件目录下的 `web/template.html` 定位；XMake 配置、安装和打包时同步页面资源。
 2. 页面只提供文件选择、上传按钮、文件列表和下载链接。
 3. 浏览器以文件对象作为请求体，用 `fetch('/upload', ...)` 上传，设置 `Content-Type: application/octet-stream`；文件名先转为 UTF-8 字节再进行 Base64 编码，放入 `FileName` 请求头；`StorageType` 请求头先固定为 `uncompressed`。不要直接对含中文的文件名调用 `btoa(file.name)`。
 4. 上传成功后重新请求列表；页面显示服务端返回的错误。文件名按文本渲染，使用同源相对 URL。
