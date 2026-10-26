@@ -30,7 +30,7 @@ class Service
 
 public:
 
-    // 读取服务监听地址、端口和下载前缀配置。
+    // 读取服务配置并构造元数据管理器；元数据文件须提前准备，加载失败时抛出异常。
     Service();
 
     // 启动 HTTP 监听并阻塞运行事件循环。创建资源、绑定监听或运行事件循环失败时抛出 std::runtime_error。
@@ -72,6 +72,9 @@ private:
 
     // 下载 URL 前缀。
     std::string m_downloadPrefix;
+
+    // 服务拥有的元数据管理器，构造时从持久化文件加载元数据到内存中。
+    DataManager m_dataManager;
 };
 
 
