@@ -2,7 +2,7 @@
 
 Linux 下的最小 HTTP 服务示例，使用项目已声明的 xrepo libevent 依赖。主文件按步骤演示事件循环、HTTP 监听、请求回调、响应缓冲区、信号事件和资源释放，便于对照后续 `Service` 实现。
 
-示例使用 `std::cout`、`std::cerr` 输出信息，使用 `std::string` 保存地址、`std::string_view` 表示请求路径和响应正文，通过带自定义删除器的 `std::unique_ptr` 管理 libevent 资源。在调用 libevent 接口时，再通过 `c_str()` 或 `data()`、`size()` 传递字符串内容。
+示例使用 `std::cout`、`std::cerr` 输出信息，使用 `std::string` 保存地址、`std::string_view` 表示请求路径和响应正文，通过带自定义删除器的 `std::unique_ptr` 管理 libevent 资源。在调用 libevent 接口时，再通过 `data()` 或 `data()`、`size()` 传递字符串内容。
 
 ## 构建与运行
 

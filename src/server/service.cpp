@@ -39,7 +39,7 @@ void Service::run()
     if (!http) throw std::runtime_error("Service::run(): evhttp_new() failed");
 
     // 使用配置中的监听地址和端口，Config 已校验端口范围。
-    if (0 != evhttp_bind_socket(http.get(), m_serverIp.c_str(), static_cast<ev_uint16_t>(m_serverPort))) throw std::runtime_error("Service::run(): evhttp_bind_socket() failed for " + m_serverIp + ":" + std::to_string(m_serverPort));
+    if (0 != evhttp_bind_socket(http.get(), m_serverIp.data(), static_cast<ev_uint16_t>(m_serverPort))) throw std::runtime_error("Service::run(): evhttp_bind_socket() failed for " + m_serverIp + ":" + std::to_string(m_serverPort));
 
     // evhttp_set_gencb() 注册通用请求回调（generic callback），由 libevent 收到请求后调用 GenericCallback；this 作为上下文传给 arg 参数。
     evhttp_set_gencb(http.get(), GenericCallback, this);

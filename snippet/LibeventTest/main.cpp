@@ -88,7 +88,7 @@ int main()
     }
 
     // 3. 绑定监听地址和端口；使用 8082，与项目服务端默认的 8081 区分。
-    if (0 != evhttp_bind_socket(http.get(), kAddress.c_str(), static_cast<ev_uint16_t>(kPort)))
+    if (0 != evhttp_bind_socket(http.get(), kAddress.data(), static_cast<ev_uint16_t>(kPort)))
     {
         std::cerr << "evhttp_bind_socket() failed: " << kAddress << ':' << kPort << '\n';
         return EXIT_FAILURE;

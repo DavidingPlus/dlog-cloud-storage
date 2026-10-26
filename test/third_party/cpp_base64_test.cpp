@@ -15,7 +15,7 @@ TEST(CppBase64Tests, Encode)
         "http://www.renenyffenegger.ch\n"
         "passion for data\n";
 
-    std::string encoded = base64_encode(reinterpret_cast<const unsigned char *>(s.c_str()), s.length());
+    std::string encoded = base64_encode(reinterpret_cast<const unsigned char *>(s.data()), s.length());
     std::string decoded = base64_decode(encoded);
 
     ASSERT_EQ(decoded, s);
@@ -32,7 +32,7 @@ TEST(CppBase64Tests, Encode)
     std::string rest0Original = "abc";
     std::string rest0Reference = "YWJj";
 
-    std::string rest0Encoded = base64_encode(reinterpret_cast<const unsigned char *>(rest0Original.c_str()),
+    std::string rest0Encoded = base64_encode(reinterpret_cast<const unsigned char *>(rest0Original.data()),
                                              rest0Original.length());
     std::string rest0Decoded = base64_decode(rest0Encoded);
 
@@ -46,7 +46,7 @@ TEST(CppBase64Tests, Encode)
     std::string rest1Original = "abcd";
     std::string rest1Reference = "YWJjZA==";
 
-    std::string rest1Encoded = base64_encode(reinterpret_cast<const unsigned char *>(rest1Original.c_str()),
+    std::string rest1Encoded = base64_encode(reinterpret_cast<const unsigned char *>(rest1Original.data()),
                                              rest1Original.length());
     std::string rest1Decoded = base64_decode(rest1Encoded);
 
@@ -60,7 +60,7 @@ TEST(CppBase64Tests, Encode)
     std::string rest2Original = "abcde";
     std::string rest2Reference = "YWJjZGU=";
 
-    std::string rest2Encoded = base64_encode(reinterpret_cast<const unsigned char *>(rest2Original.c_str()),
+    std::string rest2Encoded = base64_encode(reinterpret_cast<const unsigned char *>(rest2Original.data()),
                                              rest2Original.length());
     std::string rest2Decoded = base64_decode(rest2Encoded);
 
