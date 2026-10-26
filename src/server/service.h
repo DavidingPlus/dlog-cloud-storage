@@ -39,7 +39,7 @@ public:
 
 private:
 
-    // libevent 通用请求回调，解析请求路径并分发请求。
+    // libevent 通用请求回调，解析并解码请求路径，按参考流程分发请求。
     static void GenericCallback(evhttp_request *req, void *arg);
 
     // 上传处理：读取 FileName、StorageType 请求头和原始文件字节。

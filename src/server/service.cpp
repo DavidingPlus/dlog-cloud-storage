@@ -50,8 +50,34 @@ void Service::run()
     if (-1 == event_base_dispatch(base.get())) throw std::runtime_error("Service::run(): event_base_dispatch() failed");
 }
 
-void Service::GenericCallback(evhttp_request *, void *)
+void Service::GenericCallback(evhttp_request *req, void *arg)
 {
+    // 提取请求 URI 的路径部分，并还原其中的百分号编码。
+    std::string path = utils::urlDecode(evhttp_uri_get_path(evhttp_request_get_evhttp_uri(req)));
+
+    // run() 注册回调时传入 this 指针。
+    Service *service = static_cast<Service *>(arg);
+
+    // 下载请求。
+    if (std::string::npos != path.find(service->m_downloadPrefix))
+    {
+        Download(req, arg);
+    }
+    // 上传请求。
+    else if ("/upload" == path)
+    {
+        Upload(req, arg);
+    }
+    // 显示已存储文件列表，返回一个 HTML 页面给浏览器。
+    else if ("/" == path)
+    {
+        ListShow(req, arg);
+    }
+    // 404。
+    else
+    {
+        evhttp_send_reply(req, HTTP_NOTFOUND, "Not Found", nullptr);
+    }
 }
 
 void Service::Upload(evhttp_request *, void *)
