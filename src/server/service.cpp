@@ -2,14 +2,17 @@
 
 #include "server/config.h"
 #include "utils/common.h"
+#include "utils/fileutil.h"
 
 #include <chrono>
 #include <ctime>
 #include <iomanip>
 #include <memory>
+#include <regex>
 #include <sstream>
 #include <stdexcept>
 
+#include <event2/buffer.h>
 #include <event2/event.h>
 #include <event2/http.h>
 
@@ -71,7 +74,7 @@ void Service::GenericCallback(evhttp_request *req, void *arg)
     // 显示已存储文件列表，返回一个 HTML 页面给浏览器。
     else if ("/" == path)
     {
-        ListShow(req, arg);
+        ShowFileList(req, arg);
     }
     // 404。
     else
@@ -84,8 +87,25 @@ void Service::Upload(evhttp_request *, void *)
 {
 }
 
-void Service::ListShow(evhttp_request *, void *)
+void Service::ShowFileList(evhttp_request *req, void *arg)
 {
+    // arg 是注册回调时传入的 this，通过它访问当前服务的元数据管理器。
+    Service *service = static_cast<Service *>(arg);
+    auto files = service->m_dataManager.getAll();
+
+    // 读取可执行文件旁 web 目录中的页面模板的内容。
+    std::string content = utils::FileUtil(utils::executableDirectory() / "web" / "template.html").getContent();
+
+    // 替换文件列表进 HTML。
+    content = std::regex_replace(content, std::regex("\\{\\{FILE_LIST\\}\\}"), GenerateFileListHtml(files));
+    // 替换服务器地址进 HTML。
+    content = std::regex_replace(content, std::regex("\\{\\{BACKEND_URL\\}\\}"), "http://" + Config::GetInstance().getServerIp() + ":" + std::to_string(Config::GetInstance().getServerPort()));
+
+    // 写入请求自带的响应缓冲区，设置 HTML 类型并返回 200。
+    evbuffer *buf = evhttp_request_get_output_buffer(req);
+    evbuffer_add(buf, content.data(), content.size());
+    evhttp_add_header(evhttp_request_get_output_headers(req), "Content-Type", "text/html;charset=utf-8");
+    evhttp_send_reply(req, HTTP_OK, nullptr, nullptr);
 }
 
 void Service::Download(evhttp_request *, void *)
@@ -159,7 +179,7 @@ std::string Service::GenerateFileListHtml(const std::vector<FileMetadata> &files
         stream << "<div class='file-item'>"
                << "<div class='file-info'>"
                << "<span>📄" << utils::escapeHtmlText(path.filename().string()) << "</span>"
-               << "<span class='file-type'>" << (isCompressed ? "压缩存储" : "普通存储") << "</span>"
+               << "<span class='file-type'>" << (isCompressed ? "压缩存储" : "未压缩存储") << "</span>"
                << "<span>存储大小：" << FormatFileSize(file.m_fileSize) << "</span>"
                << "<span>" << FormatFileTime(file.m_mtime) << "</span>"
                << "</div>"

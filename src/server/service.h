@@ -46,7 +46,7 @@ private:
     static void Upload(evhttp_request *req, void *arg);
 
     // 查询元数据并返回包含文件列表的 HTML 页面。
-    static void ListShow(evhttp_request *req, void *arg);
+    static void ShowFileList(evhttp_request *req, void *arg);
 
     // 下载处理：查询元数据，读取或解压后返回原始文件内容。
     static void Download(evhttp_request *req, void *arg);
