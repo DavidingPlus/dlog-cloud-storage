@@ -69,9 +69,14 @@ target("tests")
     apply_gtest_summary_config("tests", active_gtest_groups)
 
     for _, group in ipairs(active_gtest_groups) do
-        add_tests(group, {
+        local options = {
             realtime_output = true,
             files = {group .. "/*.cpp"}
-        })
+        }
+        -- GCC/Clang 仅在服务端测试中放开私有成员访问，业务源码和正式构建不受影响。
+        if group == "server" then
+            options.cxxflags = {"-fno-access-control"}
+        end
+        add_tests(group, options)
     end
 target_end()
