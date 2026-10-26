@@ -10,6 +10,8 @@ Linux 单元测试复用服务端静态库，其他平台的测试依赖工具�
 
 两个内部静态库仅用于项目构建，不单独安装或打包。发布服务端时，所需内部实现静态链接到可执行程序中，实际需要的第三方动态库随程序一起打包。
 
+服务端资源随模块放在 `src/server/` 下：`src/server/config/server.conf` 保存运行配置，`src/server/web/template.html` 保存页面模板。XMake 配置阶段将它们分别同步到服务端和测试程序所在目录下的 `config/server.conf`、`web/template.html`；安装和打包后对应 `bin/config/server.conf`、`bin/web/template.html`。运行时通过可执行文件目录定位资源。
+
 ## 单元测试
 
 `bundle`、`cpp-base64`、`jsoncpp` 和 `libevent` 由 XMake 下载和链接，沿用项目当前构建模式的动态库配置。启用 GoogleTest 后运行：
@@ -56,7 +58,7 @@ dlog-cloud-storage-server-linux-x86_64-release-v0.0.0.tar.gz
 
 解压后，进入 `bin/` 目录，按需修改其中的 `config/server.conf`，再执行 `./dlog-cloud-storage-server`。第三方动态库位于 `lib/`，程序通过相对自身位置的 RPATH 查找它们，可以整体移动解压目录。没有实际使用第三方动态库时，发布包可能只有 `bin/`。
 
-`$ORIGIN/../lib` 在链接阶段直接写入程序，并使用 RPATH 支持间接动态库依赖；安装和打包阶段保留该设置，不需要额外的 ELF 修改工具。开发时使用 `xmake run dlog-cloud-storage-server`，由 XMake 提供依赖包的运行环境。修改项目中的 `config/server.conf` 后，执行 `xmake config`，配置阶段会将文件同步到可执行文件目录下的 `config/server.conf`，无需先编译服务端。
+`$ORIGIN/../lib` 在链接阶段直接写入程序，并使用 RPATH 支持间接动态库依赖；安装和打包阶段保留该设置，不需要额外的 ELF 修改工具。开发时使用 `xmake run dlog-cloud-storage-server`，由 XMake 提供依赖包的运行环境。修改 `src/server/config/server.conf` 或 `src/server/web/template.html` 后，执行 `xmake config`，配置阶段会将文件同步到可执行文件目录下的 `config/server.conf`、`web/template.html`，无需先编译服务端。
 
 系统基础库（如 glibc）由目标系统提供，发布环境仍需匹配 CPU 架构和系统运行库版本。
 

@@ -46,11 +46,14 @@ target("tests")
     if is_plat("linux") then
         add_deps("dlog-cloud-storage-server-static")
 
-        -- 服务端测试复用现有运行配置，无需在基础用例中准备配置文件。
+        -- 服务端测试同步运行配置和页面，资源布局与服务端程序保持一致。
         on_config(function (target)
             local configdir = path.join(target:targetdir(), "config")
+            local webdir = path.join(target:targetdir(), "web")
             os.mkdir(configdir)
-            os.cp(path.join(os.projectdir(), "config/server.conf"), path.join(configdir, "server.conf"))
+            os.mkdir(webdir)
+            os.cp(path.join(os.projectdir(), "src/server/config/server.conf"), path.join(configdir, "server.conf"))
+            os.cp(path.join(os.projectdir(), "src/server/web/template.html"), path.join(webdir, "template.html"))
         end)
     end
 

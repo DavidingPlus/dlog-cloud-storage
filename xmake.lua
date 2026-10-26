@@ -133,15 +133,19 @@ if is_plat("linux") then
         add_files("src/server/main.cpp")
         set_targetdir("$(builddir)/$(plat)/$(arch)/$(mode)/bin/")
 
-        -- 配置阶段同步配置到可执行文件目录下；修改配置后重新执行 xmake config 即可更新。
+        -- 配置阶段同步服务端配置和页面；修改资源后重新执行 xmake config 即可更新。
         on_config(function (target)
             local configdir = path.join(target:targetdir(), "config")
+            local webdir = path.join(target:targetdir(), "web")
             os.mkdir(configdir)
-            os.cp(path.join(os.projectdir(), "config/server.conf"), path.join(configdir, "server.conf"))
+            os.mkdir(webdir)
+            os.cp(path.join(os.projectdir(), "src/server/config/server.conf"), path.join(configdir, "server.conf"))
+            os.cp(path.join(os.projectdir(), "src/server/web/template.html"), path.join(webdir, "template.html"))
         end)
 
-        -- 安装及 XPack 打包时也保留可执行文件目录下的 config 子目录。
-        add_installfiles("config/server.conf", {prefixdir = "bin/config"})
+        -- 安装及 XPack 打包时，配置和页面分别放在可执行文件旁的 config、web 子目录。
+        add_installfiles("src/server/config/server.conf", {prefixdir = "bin/config"})
+        add_installfiles("src/server/web/template.html", {prefixdir = "bin/web"})
 
         -- 关闭为项目内动态库依赖自动添加的 RPATH，不影响下面的手动设置。当前内部库为静态库，此项不是必需；保留以显式控制自动添加行为。
         set_policy("build.rpath", false)
