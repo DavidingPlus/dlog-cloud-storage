@@ -24,7 +24,7 @@ enum class StorageType
 };
 
 
-// 基于 libevent 的 HTTP 服务；接口沿用参考实现，当前仅提供接口骨架。
+// 基于 libevent 的 HTTP 文件存储服务。
 class Service
 {
 
@@ -33,14 +33,14 @@ public:
     // 读取服务监听地址、端口和下载前缀配置。
     Service();
 
-    // 启动 HTTP 监听并运行事件循环。
-    bool runModule();
+    // 启动 HTTP 监听并阻塞运行事件循环。创建资源、绑定监听或运行事件循环失败时抛出 std::runtime_error。
+    void run();
 
 
 private:
 
     // libevent 通用请求回调，解析请求路径并分发请求。
-    static void GenHandler(evhttp_request *req, void *arg);
+    static void GenericCallback(evhttp_request *req, void *arg);
 
     // 上传处理：读取 FileName、StorageType 请求头和原始文件字节。
     static void Upload(evhttp_request *req, void *arg);

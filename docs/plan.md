@@ -183,13 +183,13 @@ enum class StorageType
 
 ### Service 复现设计
 
-在 `src/server/service.h/.cpp` 中实现 `server::Service`，复用现有配置、文件工具和元数据管理。当前类骨架先保留参考实现的函数名、返回类型、静态函数划分和回调参数；参考项目的 `StorageInfo` 类型适配为本项目已有的 `FileMetadata`。后续接口调整另行决定。
+在 `src/server/service.h/.cpp` 中实现 `server::Service`，复用现有配置、文件工具和元数据管理。沿用参考实现的职责划分、静态函数划分和回调参数；启动入口命名为 `void run()`，通过异常报告失败，参考项目的 `StorageInfo` 类型适配为本项目已有的 `FileMetadata`。后续接口调整另行决定。
 
 | 建议接口 | 职责 |
 | --- | --- |
 | `Service()` | 无参构造，读取监听地址、端口和下载前缀 |
-| `bool RunModule()` | 创建监听和事件循环，返回运行结果 |
-| `static GenHandler(evhttp_request *, void *)` | 通用请求回调，解析路径并分发请求 |
+| `void run()` | 按配置创建监听、注册通用回调并运行事件循环，失败时抛出异常 |
+| `static GenericCallback(evhttp_request *, void *)` | 通用请求回调，解析路径并分发请求 |
 | `static Upload(evhttp_request *, void *)` | 解析请求头和正文，保存文件并提交元数据 |
 | `static FormatFileTime(std::filesystem::file_time_type)` | 直接接收文件修改时间，在函数内部完成日历时间转换和格式化 |
 | `static GenerateFileListHtml(const std::vector<FileMetadata> &)` | 生成文件列表 HTML |
@@ -198,13 +198,13 @@ enum class StorageType
 | `static GetETag(const FileMetadata &)` | 根据元数据生成 ETag |
 | `static Download(evhttp_request *, void *)` | 按请求路径查找元数据，读取或解压后返回原始字节 |
 
-请求处理函数统一保留参考实现的 `(evhttp_request *, void *)` 参数，不预先拆分实例分发函数或注入 `DataManager`。`GetETag()` 先保留接口，断点下载仍按第 7 节后续实施。当前骨架中的 `RunModule()` 返回 false，返回字符串的辅助函数返回空字符串，其余业务函数为空实现。
+请求处理函数统一保留参考实现的 `(evhttp_request *, void *)` 参数，不预先拆分实例分发函数或注入 `DataManager`。`run()` 已实现事件循环和 HTTP 服务创建、配置地址与端口监听，以及通用回调注册；注册 `GenericCallback` 时以 `this` 作为上下文。资源以智能指针管理，按 HTTP 服务、事件循环的顺序自动释放；正常结束直接返回，创建事件循环或 HTTP 服务、绑定监听、运行事件循环失败时抛出 `std::runtime_error`。暂不添加信号处理，停止流程后续再补充。文件时间、文件大小、列表 HTML 和 ETag 辅助函数已实现，四个请求处理回调仍为空实现；断点下载仍按第 7 节后续实施。
 
 本节骨架先沿用参考实现的 `ListShow()` 页面生成职责；上方协议和第 6 节中的独立 `/files` 接口作为原计划保留，后续确定是否拆分时再统一调整。
 
-创建 `event_base`、`evhttp` 和信号事件后检查返回值，以 RAII 管理资源；释放 HTTP 对象和信号事件后再释放 `event_base`。监听地址和端口使用 `Config`，先匹配 `/`、`/upload`、`/files` 等固定路由，再匹配配置中的下载前缀。请求路径解码一次后向下传递，避免各处理函数重复解码；已知路径的方法不匹配返回 405，未知路径返回 404。
+请求分发后续先匹配 `/`、`/upload`、`/files` 等固定路由，再匹配配置中的下载前缀。请求路径解码一次后向下传递，避免各处理函数重复解码；已知路径的方法不匹配返回 405，未知路径返回 404。
 
-启动阶段按“配置与日志 → 数据目录及缺失的元数据文件初始化 → `DataManager` → `Service::RunModule()`”组织。元数据访问方式、回调异常处理和停止流程在业务实现时补齐，当前不额外增加类接口；退出后按第 4 节关闭日志。
+启动阶段按“配置与日志 → 数据目录及缺失的元数据文件初始化 → `DataManager` → `Service::run()`”组织。元数据访问方式、回调异常处理和服务停止流程后续再补齐，当前不额外增加类接口；退出后按第 4 节关闭日志。
 
 ## 6. 分阶段实施
 

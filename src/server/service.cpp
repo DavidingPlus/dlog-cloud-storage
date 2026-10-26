@@ -6,8 +6,12 @@
 #include <chrono>
 #include <ctime>
 #include <iomanip>
+#include <memory>
 #include <sstream>
 #include <stdexcept>
+
+#include <event2/event.h>
+#include <event2/http.h>
 
 
 DLOG_CLOUD_STORAGE_NAMESPACE_BEGIN(server)
@@ -20,13 +24,31 @@ Service::Service()
     m_downloadPrefix = Config::GetInstance().getDownloadPrefix();
 }
 
-// TODO
-
-bool Service::runModule()
+void Service::run()
 {
+    // 创建事件循环，使用 std::unique_ptr<T, Deleter> 独占管理资源。
+    // 第一个模板参数 event_base 是对象类型，unique_ptr 内部保存 event_base*。
+    // 第二个模板参数 decltype(&event_base_free) 获取删除器的类型，即 void (*)(event_base*)，不会执行该函数。
+    // 两个构造参数分别是 event_base_new() 返回的资源指针，类型是 event_base *，以及 event_base_free 函数指针；后者保存起来，供释放资源时调用。
+    // unique_ptr 默认使用 delete，这里指定 libevent 配套的释放函数；正常结束、提前 return 或因异常离开作用域时，自动释放非空指针。
+    std::unique_ptr<event_base, decltype(&event_base_free)> base(event_base_new(), event_base_free);
+    if (!base) throw std::runtime_error("Service::run(): event_base_new() failed");
+
+    // base.get() 取出内部的原始指针供 libevent 使用，资源仍归 base 管理；http 使用同样的自定义删除器写法。局部变量按构造的反序销毁：先释放 HTTP 服务，再释放它依赖的 base。
+    std::unique_ptr<evhttp, decltype(&evhttp_free)> http(evhttp_new(base.get()), evhttp_free);
+    if (!http) throw std::runtime_error("Service::run(): evhttp_new() failed");
+
+    // 使用配置中的监听地址和端口，Config 已校验端口范围。
+    if (0 != evhttp_bind_socket(http.get(), m_serverIp.c_str(), static_cast<ev_uint16_t>(m_serverPort))) throw std::runtime_error("Service::run(): evhttp_bind_socket() failed for " + m_serverIp + ":" + std::to_string(m_serverPort));
+
+    // evhttp_set_gencb() 注册通用请求回调（generic callback），由 libevent 收到请求后调用 GenericCallback；this 作为上下文传给 arg 参数。
+    evhttp_set_gencb(http.get(), GenericCallback, this);
+
+    // 阻塞等待事件并执行回调；返回 -1 时抛出异常，0/1 分别表示正常退出或没有待处理事件。
+    if (-1 == event_base_dispatch(base.get())) throw std::runtime_error("Service::run(): event_base_dispatch() failed");
 }
 
-void Service::GenHandler(evhttp_request *, void *)
+void Service::GenericCallback(evhttp_request *, void *)
 {
 }
 
