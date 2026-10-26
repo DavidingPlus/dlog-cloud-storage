@@ -542,3 +542,92 @@ TEST_F(ServiceHttpTests, DoesNotRecursivelyExpandFileListPlaceholdersInsideFilen
     EXPECT_NE(body.find("📄{{FILE_LIST}}.txt"), std::string::npos);
     EXPECT_EQ(Count(body, "class='file-item'"), 1U);
 }
+
+TEST_F(ServiceRoutingTests, IgnoresQueryParametersWhenSelectingTheRootHandler)
+{
+    server::Service service;
+    LocalHttpServer http(service);
+    EXPECT_EQ(http.get("/?token=123&next=/download/a.txt").m_code, HTTP_OK);
+}
+
+TEST_F(ServiceRoutingTests, DecodesThePathBeforeRouting)
+{
+    server::Service service;
+    LocalHttpServer http(service);
+    EXPECT_EQ(http.get("/%2F").m_code, HTTP_NOTFOUND); // 解码后为 //，不是根路径 /。
+    EXPECT_EQ(http.get("%2F").m_code, HTTP_OK);
+}
+
+TEST_F(ServiceRoutingTests, DoesNotDecodeThePathTwice)
+{
+    server::Service service;
+    LocalHttpServer http(service);
+    EXPECT_EQ(http.get("%252F").m_code, HTTP_NOTFOUND);
+}
+
+TEST_F(ServiceRoutingTests, Returns404ForUnknownAndCaseSensitivePaths)
+{
+    server::Service service;
+    LocalHttpServer http(service);
+    for (const char *path : {"/missing", "/UPLOAD", "/upload/", "/files", "/./", "/not-found?next=/download/a.txt"})
+    {
+        SCOPED_TRACE(path);
+        const auto response = http.get(path);
+        EXPECT_EQ(response.m_code, HTTP_NOTFOUND);
+        EXPECT_TRUE(response.m_body.empty());
+    }
+}
+
+TEST_F(ServiceRoutingTests, PropagatesInvalidPercentEncodingBeforeReplying)
+{
+    server::Service service;
+    for (const char *path : {"/bad%", "/bad%Q1", "/bad%1Q"})
+    {
+        SCOPED_TRACE(path);
+        auto request = MakeRequest(path);
+        EXPECT_THROW(Access::dispatch(request.get(), service), std::invalid_argument);
+        EXPECT_EQ(evbuffer_get_length(evhttp_request_get_output_buffer(request.get())), 0U);
+    }
+}
+
+TEST_F(ServiceRunTests, ReportsTheConfiguredAddressWhenThePortIsAlreadyInUse)
+{
+    server::Service placeholder;
+    LocalHttpServer occupiedPort(placeholder);
+    m_config["server_ip"] = "127.0.0.1";
+    m_config["server_port"] = occupiedPort.port();
+    applyConfig();
+    server::Service service;
+    try
+    {
+        service.run();
+        FAIL() << "Expected the occupied port to fail";
+    }
+    catch (const std::runtime_error &error)
+    {
+        const std::string message = error.what();
+        EXPECT_NE(message.find("evhttp_bind_socket() failed"), std::string::npos);
+        EXPECT_NE(message.find("127.0.0.1:" + std::to_string(occupiedPort.port())), std::string::npos);
+    }
+    EXPECT_EQ(occupiedPort.get("/").m_code, HTTP_OK);
+}
+
+TEST_F(ServiceRunTests, RepeatedBindFailuresDoNotLeakEventLoopDescriptors)
+{
+    server::Service placeholder;
+    LocalHttpServer occupiedPort(placeholder);
+    m_config["server_ip"] = "127.0.0.1";
+    m_config["server_port"] = occupiedPort.port();
+    applyConfig();
+    server::Service service;
+    const auto descriptorCount = []
+    {
+        return std::distance(fs::directory_iterator("/proc/self/fd"), fs::directory_iterator{});
+    };
+    const auto before = descriptorCount();
+    for (int attempt = 0; attempt < 10; ++attempt)
+    {
+        EXPECT_THROW(service.run(), std::runtime_error);
+        EXPECT_EQ(descriptorCount(), before);
+    }
+}
