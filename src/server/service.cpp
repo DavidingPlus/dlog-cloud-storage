@@ -52,7 +52,7 @@ void Service::run()
 
 void Service::GenericCallback(evhttp_request *req, void *arg)
 {
-    // 提取请求 URI 的路径部分，并还原其中的百分号编码。
+    // evhttp_request_get_evhttp_uri() 取出 req 中已解析的 URI 对象；evhttp_uri_get_path() 读取路径，不含查询参数 query。路径中的 %HH 由 urlDecode() 还原，具体见 docs/libevent-request-uri.md。
     std::string path = utils::urlDecode(evhttp_uri_get_path(evhttp_request_get_evhttp_uri(req)));
 
     // run() 注册回调时传入 this 指针。
