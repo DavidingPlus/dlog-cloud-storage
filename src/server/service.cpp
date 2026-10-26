@@ -44,6 +44,8 @@ void Service::run()
     // evhttp_set_gencb() 注册通用请求回调（generic callback），由 libevent 收到请求后调用 GenericCallback；this 作为上下文传给 arg 参数。
     evhttp_set_gencb(http.get(), GenericCallback, this);
 
+    // TODO: 后续处理 SIGINT/SIGTERM 停止信号，并补齐在途上传、下载请求的收尾。
+
     // 阻塞等待事件并执行回调；返回 -1 时抛出异常，0/1 分别表示正常退出或没有待处理事件。
     if (-1 == event_base_dispatch(base.get())) throw std::runtime_error("Service::run(): event_base_dispatch() failed");
 }
