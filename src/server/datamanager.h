@@ -52,7 +52,7 @@ public:
     // 从磁盘的持久化文件加载元数据到内存，文件不存在或加载失败时抛出异常。主要在程序初始化运行时使用。
     void loadFromDisk();
 
-    // 把当前内存中的整张元数据表保存到磁盘，失败时抛出异常。
+    // 将整张表写入同目录临时文件后替换正式 JSON；失败时保留原文件并抛出异常。
     void persistToDisk();
 
     // 按 URL 新增元数据并持久化，入表前对文件路径做词法标准化；URL 已存在时抛出 std::invalid_argument。
@@ -73,6 +73,9 @@ public:
 
 
 private:
+
+    // 调用方已持有写锁，避免 insert()/update() 保存时重复加锁。
+    void persistToDiskUnlocked();
 
     // 对文件路径做词法标准化后，仅向内存表新增元数据；URL 重复时抛出 std::invalid_argument，供启动加载使用。
     void insertWithoutPersist(const FileMetadata &info);

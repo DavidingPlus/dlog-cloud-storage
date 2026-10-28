@@ -990,7 +990,7 @@ TEST_F(DataManagerTests, PersistToDiskReportsDirectoryAtFilePathAndCanBeRetried)
     fs::remove(m_filePath);
     fs::create_directory(m_filePath);
 
-    EXPECT_THROW(manager.persistToDisk(), std::ios_base::failure);
+    EXPECT_THROW(manager.persistToDisk(), fs::filesystem_error);
     ExpectInfos(manager.getAll(), {info});
 
     fs::remove(m_filePath);
@@ -1008,7 +1008,7 @@ TEST_F(DataManagerTests, InsertReportsPersistenceFailureAndAllowsRetry)
     fs::remove(m_filePath);
     fs::create_directory(m_filePath);
 
-    EXPECT_THROW(manager.insert(added), std::ios_base::failure);
+    EXPECT_THROW(manager.insert(added), fs::filesystem_error);
 
     // 当前实现先修改内存再写盘；保存失败不会回滚，可通过 persistToDisk() 重试。
     ExpectInfos(manager.getAll(), {original, added});
@@ -1030,7 +1030,7 @@ TEST_F(DataManagerTests, UpdateReportsPersistenceFailureAndAllowsRetry)
     fs::remove(m_filePath);
     fs::create_directory(m_filePath);
 
-    EXPECT_THROW(manager.update(updated), std::ios_base::failure);
+    EXPECT_THROW(manager.update(updated), fs::filesystem_error);
 
     ExpectInfos(manager.getAll(), {updated, other});
     fs::remove(m_filePath);

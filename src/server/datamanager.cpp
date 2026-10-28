@@ -58,11 +58,17 @@ void DataManager::loadFromDisk()
 
 void DataManager::persistToDisk()
 {
-    auto infos = getAll();
+    std::unique_lock lock(m_rwlock);
+    persistToDiskUnlocked();
+}
+
+void DataManager::persistToDiskUnlocked()
+{
     Json::Value root(Json::arrayValue);
 
-    for (auto &info : infos)
+    for (auto &entry : m_table)
     {
+        auto &info = entry.second;
         Json::Value item;
 
         // 保存文件系统时钟的原始计数，加载时使用相同的 duration 类型还原。
@@ -75,7 +81,30 @@ void DataManager::persistToDisk()
     }
 
     auto body = utils::JsonUtil::Serialize(root);
-    utils::FileUtil(m_metadataFilePath).setContent(body);
+
+    // 复制正式文件的路径，得到一个独立的 path 对象。例如 /data/metadata.json。然后在路径末尾追加 ".tmp" 后缀，此时 /data/metadata.json.tmp。
+    auto temporaryPath = m_metadataFilePath;
+    temporaryPath += ".tmp";
+
+    // symlink_status() 获取路径自身的状态，exists() 判断它是否存在。这样即使 .tmp 是一个指向不存在文件的符号链接，也识别为已占用。如果已存在，就抛出异常。这一步放在 try 外面，后面的清理代码不会删除这个原本就存在的文件，因为这本就不是当前函数需要做的事情。
+    if (std::filesystem::exists(std::filesystem::symlink_status(temporaryPath))) throw std::filesystem::filesystem_error("DataManager::persistToDiskUnlocked(): temporary path already exists", temporaryPath, std::make_error_code(std::errc::file_exists));
+
+    try
+    {
+        utils::FileUtil(temporaryPath).setContent(body);
+        // 让临时文件继承正式文件的权限。
+        if (std::filesystem::exists(m_metadataFilePath)) std::filesystem::permissions(temporaryPath, std::filesystem::status(m_metadataFilePath).permissions());
+        // 完整写入并关闭后，临时文件替换为正式文件，原临时文件消失。
+        std::filesystem::rename(temporaryPath, m_metadataFilePath);
+    }
+    catch (...)
+    {
+        std::error_code error;
+        // 保存失败时，清理临时文件并重新抛出异常。不影响正式文件。
+        std::filesystem::remove(temporaryPath, error);
+        // 上层函数统一处理或输出具体的 throw xxx 信息。这里原样重新 throw 当前异常即可，保留其类型和错误信息。
+        throw;
+    }
 }
 
 void DataManager::insert(const FileMetadata &info)
