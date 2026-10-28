@@ -16,7 +16,7 @@ struct evhttp_request;
 DLOG_CLOUD_STORAGE_NAMESPACE_BEGIN(server)
 
 
-// 上传请求指定的服务端存储策略，分别对应 uncompressed、compressed。
+// 文件存储类型枚举。
 enum class StorageType
 {
     Uncompressed,
@@ -42,7 +42,7 @@ private:
     // libevent 通用请求回调，解析并解码请求路径，按参考流程分发请求。
     static void GenericCallback(evhttp_request *req, void *arg);
 
-    // 上传处理：读取 FileName、StorageType 请求头和原始文件字节。
+    // 上传处理：解码 FileName，按 StorageType 直接保存或压缩后保存，并持久化元数据，成功返回 201 和 JSON。
     static void Upload(evhttp_request *req, void *arg);
 
     // 查询元数据并返回包含文件列表的 HTML 页面。
