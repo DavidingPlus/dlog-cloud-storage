@@ -62,11 +62,11 @@ public:
     void update(const FileMetadata &info);
 
     // 根据下载 URL 获取元数据副本，未找到时抛出 std::out_of_range。
-    FileMetadata getOneByUrl(const std::string &url) const;
+    FileMetadata getFileMetaDataByUrl(const std::string &url) const;
 
     // 根据文件路径获取元数据副本，相对路径以可执行文件所在目录为基准。
     // 查询路径转为绝对路径并做词法标准化后，与记录中的标准化路径比较；不要求文件存在，不解析符号链接。未找到时抛出 std::out_of_range。
-    FileMetadata getOneByFilePath(const std::filesystem::path &filePath) const;
+    FileMetadata getFileMetaDataByFilePath(const std::filesystem::path &filePath) const;
 
     // 获取全部元数据的副本。
     std::vector<FileMetadata> getAll() const;

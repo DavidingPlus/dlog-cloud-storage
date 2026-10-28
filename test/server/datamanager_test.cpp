@@ -254,8 +254,8 @@ TEST_F(DataManagerTests, ConstructorLoadsAllFieldsFromConfiguredFile)
 
     const server::DataManager manager;
 
-    ExpectInfo(manager.getOneByUrl(first.m_url), first);
-    ExpectInfo(manager.getOneByFilePath(second.m_absoluteFilePath), second);
+    ExpectInfo(manager.getFileMetaDataByUrl(first.m_url), first);
+    ExpectInfo(manager.getFileMetaDataByFilePath(second.m_absoluteFilePath), second);
     ExpectInfos(manager.getAll(), {first, second});
 }
 
@@ -264,8 +264,8 @@ TEST_F(DataManagerTests, ConstructorAcceptsEmptyArray)
     const server::DataManager manager;
 
     EXPECT_TRUE(manager.getAll().empty());
-    EXPECT_THROW(manager.getOneByUrl("/download/missing.txt"), std::out_of_range);
-    EXPECT_THROW(manager.getOneByFilePath("./data/missing.txt"), std::out_of_range);
+    EXPECT_THROW(manager.getFileMetaDataByUrl("/download/missing.txt"), std::out_of_range);
+    EXPECT_THROW(manager.getFileMetaDataByFilePath("./data/missing.txt"), std::out_of_range);
     EXPECT_TRUE(manager.getAll().empty());
 }
 
@@ -547,8 +547,8 @@ TEST_F(DataManagerTests, LoadFromDiskPreservesAbsolutePathsAfterWorkingDirectory
     fs::current_path(m_directory);
 
     server::DataManager manager;
-    ExpectInfo(manager.getOneByUrl(info.m_url), info);
-    ExpectInfo(manager.getOneByFilePath("./data/report.txt"), info);
+    ExpectInfo(manager.getFileMetaDataByUrl(info.m_url), info);
+    ExpectInfo(manager.getFileMetaDataByFilePath("./data/report.txt"), info);
 
     ASSERT_NO_THROW(manager.persistToDisk());
     EXPECT_EQ(readMetadata()[0]["absolute_file_path"].asString(), info.m_absoluteFilePath.string());
@@ -580,8 +580,8 @@ TEST_F(DataManagerTests, GetAllReturnsEveryRecordWithoutDependingOnOrder)
     ExpectInfos(manager.getAll(), infos);
     for (const auto &info : infos)
     {
-        ExpectInfo(manager.getOneByUrl(info.m_url), info);
-        ExpectInfo(manager.getOneByFilePath(info.m_absoluteFilePath), info);
+        ExpectInfo(manager.getFileMetaDataByUrl(info.m_url), info);
+        ExpectInfo(manager.getFileMetaDataByFilePath(info.m_absoluteFilePath), info);
     }
 }
 
@@ -592,8 +592,8 @@ TEST_F(DataManagerTests, QueriesReturnIndependentCopies)
     const server::DataManager manager;
     const auto body = utils::FileUtil(m_filePath).getContent();
 
-    auto byUrl = manager.getOneByUrl(info.m_url);
-    auto byPath = manager.getOneByFilePath(info.m_absoluteFilePath);
+    auto byUrl = manager.getFileMetaDataByUrl(info.m_url);
+    auto byPath = manager.getFileMetaDataByFilePath(info.m_absoluteFilePath);
     auto all = manager.getAll();
     byUrl.m_fileSize = 999;
     byPath.m_absoluteFilePath = "changed";
@@ -602,13 +602,13 @@ TEST_F(DataManagerTests, QueriesReturnIndependentCopies)
     all.front().m_mtime = fs::file_time_type{};
     all.clear();
 
-    ExpectInfo(manager.getOneByUrl(info.m_url), info);
-    ExpectInfo(manager.getOneByFilePath(info.m_absoluteFilePath), info);
+    ExpectInfo(manager.getFileMetaDataByUrl(info.m_url), info);
+    ExpectInfo(manager.getFileMetaDataByFilePath(info.m_absoluteFilePath), info);
     ExpectInfos(manager.getAll(), {info});
     EXPECT_EQ(utils::FileUtil(m_filePath).getContent(), body);
 }
 
-TEST_F(DataManagerTests, GetOneByFilePathNormalizesLegacyPathsAndQueries)
+TEST_F(DataManagerTests, getFileMetaDataByFilePathNormalizesLegacyPathsAndQueries)
 {
     auto info = MakeInfo("report.txt");
     info.m_absoluteFilePath = utils::executableDirectory() / "./data/folder/staging/../report.txt";
@@ -628,30 +628,30 @@ TEST_F(DataManagerTests, GetOneByFilePathNormalizesLegacyPathsAndQueries)
     for (const auto &filePath : paths)
     {
         SCOPED_TRACE(filePath);
-        ExpectInfo(manager.getOneByFilePath(filePath), info);
+        ExpectInfo(manager.getFileMetaDataByFilePath(filePath), info);
     }
 
-    ExpectInfo(manager.getOneByUrl(info.m_url), info);
+    ExpectInfo(manager.getFileMetaDataByUrl(info.m_url), info);
     EXPECT_EQ(utils::FileUtil(m_filePath).getContent(), body);
 
     ASSERT_NO_THROW(manager.persistToDisk());
     EXPECT_EQ(readMetadata()[0]["absolute_file_path"].asString(), info.m_absoluteFilePath.string());
     const server::DataManager restored;
-    ExpectInfo(restored.getOneByFilePath(legacyPath), info);
+    ExpectInfo(restored.getFileMetaDataByFilePath(legacyPath), info);
 }
 
-TEST_F(DataManagerTests, GetOneByFilePathMatchesAbsoluteRecordUsingRelativePath)
+TEST_F(DataManagerTests, getFileMetaDataByFilePathMatchesAbsoluteRecordUsingRelativePath)
 {
     auto info = MakeInfo("report.txt");
     info.m_absoluteFilePath = utils::executableDirectory() / "data" / "report.txt";
     writeRecords({info});
     const server::DataManager manager;
 
-    ExpectInfo(manager.getOneByFilePath("data/report.txt"), info);
-    ExpectInfo(manager.getOneByFilePath(info.m_absoluteFilePath), info);
+    ExpectInfo(manager.getFileMetaDataByFilePath("data/report.txt"), info);
+    ExpectInfo(manager.getFileMetaDataByFilePath(info.m_absoluteFilePath), info);
 }
 
-TEST_F(DataManagerTests, GetOneByFilePathUsesExecutableDirectoryAfterWorkingDirectoryChanges)
+TEST_F(DataManagerTests, getFileMetaDataByFilePathUsesExecutableDirectoryAfterWorkingDirectoryChanges)
 {
     const auto relativeFile = m_directory.filename() / "files" / "report.txt";
     auto info = MakeInfo("report.txt");
@@ -664,9 +664,9 @@ TEST_F(DataManagerTests, GetOneByFilePathUsesExecutableDirectoryAfterWorkingDire
     const server::DataManager manager;
     fs::current_path(m_directory);
 
-    ExpectInfo(manager.getOneByFilePath(relativeFile), info);
-    ExpectInfo(manager.getOneByFilePath(info.m_absoluteFilePath), info);
-    ExpectInfo(manager.getOneByFilePath(decoy.m_absoluteFilePath), decoy);
+    ExpectInfo(manager.getFileMetaDataByFilePath(relativeFile), info);
+    ExpectInfo(manager.getFileMetaDataByFilePath(info.m_absoluteFilePath), info);
+    ExpectInfo(manager.getFileMetaDataByFilePath(decoy.m_absoluteFilePath), decoy);
 }
 
 TEST_F(DataManagerTests, MissingQueriesDoNotInsertRecords)
@@ -679,12 +679,12 @@ TEST_F(DataManagerTests, MissingQueriesDoNotInsertRecords)
     for (const char *url : {"", "/download/missing.txt", "/download/REPORT.txt", "report.txt", "/download/report.txt?x=1"})
     {
         SCOPED_TRACE(url);
-        EXPECT_THROW(manager.getOneByUrl(url), std::out_of_range);
+        EXPECT_THROW(manager.getFileMetaDataByUrl(url), std::out_of_range);
     }
     for (const char *path : {"", "./data/missing.txt", "./data/REPORT.txt", "./other/report.txt", "./data/../other/report.txt"})
     {
         SCOPED_TRACE(path);
-        EXPECT_THROW(manager.getOneByFilePath(path), std::out_of_range);
+        EXPECT_THROW(manager.getFileMetaDataByFilePath(path), std::out_of_range);
     }
 
     ExpectInfos(manager.getAll(), {info});
@@ -727,11 +727,11 @@ TEST_F(DataManagerTests, InsertNormalizesPathWithoutChangingCaller)
     ASSERT_NO_THROW(manager.insert(supplied));
 
     EXPECT_EQ(supplied.m_absoluteFilePath, originalPath);
-    ExpectInfo(manager.getOneByUrl(expected.m_url), expected);
-    ExpectInfo(manager.getOneByFilePath(m_directory.filename() / "report.txt"), expected);
+    ExpectInfo(manager.getFileMetaDataByUrl(expected.m_url), expected);
+    ExpectInfo(manager.getFileMetaDataByFilePath(m_directory.filename() / "report.txt"), expected);
     EXPECT_EQ(readMetadata()[0]["absolute_file_path"].asString(), expected.m_absoluteFilePath.string());
     const server::DataManager restored;
-    ExpectInfo(restored.getOneByFilePath(originalPath), expected);
+    ExpectInfo(restored.getFileMetaDataByFilePath(originalPath), expected);
 }
 
 TEST_F(DataManagerTests, InsertRejectsDuplicateUrlWithoutChangingMemoryOrDisk)
@@ -764,8 +764,8 @@ TEST_F(DataManagerTests, InsertUsesUrlAsUniqueKey)
 
     ASSERT_NO_THROW(manager.insert(second));
 
-    ExpectInfo(manager.getOneByUrl(first.m_url), first);
-    ExpectInfo(manager.getOneByUrl(second.m_url), second);
+    ExpectInfo(manager.getFileMetaDataByUrl(first.m_url), first);
+    ExpectInfo(manager.getFileMetaDataByUrl(second.m_url), second);
     const server::DataManager restored;
     ExpectInfos(restored.getAll(), {first, second});
 }
@@ -781,9 +781,9 @@ TEST_F(DataManagerTests, UpdateReplacesRecordAndImmediatelyPersistsWholeTable)
 
     ASSERT_NO_THROW(manager.update(updated));
 
-    ExpectInfo(manager.getOneByUrl(original.m_url), updated);
-    ExpectInfo(manager.getOneByFilePath(updated.m_absoluteFilePath), updated);
-    EXPECT_THROW(manager.getOneByFilePath(original.m_absoluteFilePath), std::out_of_range);
+    ExpectInfo(manager.getFileMetaDataByUrl(original.m_url), updated);
+    ExpectInfo(manager.getFileMetaDataByFilePath(updated.m_absoluteFilePath), updated);
+    EXPECT_THROW(manager.getFileMetaDataByFilePath(original.m_absoluteFilePath), std::out_of_range);
     ExpectInfos(manager.getAll(), {updated, other});
     const server::DataManager restored;
     ExpectInfos(restored.getAll(), {updated, other});
@@ -805,12 +805,12 @@ TEST_F(DataManagerTests, UpdateNormalizesPathWithoutChangingCaller)
     ASSERT_NO_THROW(manager.update(supplied));
 
     EXPECT_EQ(supplied.m_absoluteFilePath, originalPath);
-    ExpectInfo(manager.getOneByUrl(expected.m_url), expected);
-    ExpectInfo(manager.getOneByFilePath(m_directory.filename() / "updated.txt"), expected);
-    EXPECT_THROW(manager.getOneByFilePath(original.m_absoluteFilePath), std::out_of_range);
+    ExpectInfo(manager.getFileMetaDataByUrl(expected.m_url), expected);
+    ExpectInfo(manager.getFileMetaDataByFilePath(m_directory.filename() / "updated.txt"), expected);
+    EXPECT_THROW(manager.getFileMetaDataByFilePath(original.m_absoluteFilePath), std::out_of_range);
     EXPECT_EQ(readMetadata()[0]["absolute_file_path"].asString(), expected.m_absoluteFilePath.string());
     const server::DataManager restored;
-    ExpectInfo(restored.getOneByFilePath(originalPath), expected);
+    ExpectInfo(restored.getFileMetaDataByFilePath(originalPath), expected);
 }
 
 TEST_F(DataManagerTests, UpdateRejectsUnknownUrlWithoutChangingMemoryOrDisk)
@@ -824,7 +824,7 @@ TEST_F(DataManagerTests, UpdateRejectsUnknownUrlWithoutChangingMemoryOrDisk)
     EXPECT_THROW(manager.update(missing), std::out_of_range);
 
     ExpectInfos(manager.getAll(), {original});
-    EXPECT_THROW(manager.getOneByUrl(missing.m_url), std::out_of_range);
+    EXPECT_THROW(manager.getFileMetaDataByUrl(missing.m_url), std::out_of_range);
     EXPECT_EQ(utils::FileUtil(m_filePath).getContent(), body);
 
     auto updated = original;
@@ -925,8 +925,8 @@ TEST_F(DataManagerTests, MetadataRoundTripPreservesUnicodeAndEscapedStrings)
     EXPECT_EQ(root[0]["absolute_file_path"].asString(), filePath);
 
     const server::DataManager restored;
-    ExpectInfo(restored.getOneByUrl(info.m_url), info);
-    ExpectInfo(restored.getOneByFilePath(info.m_absoluteFilePath), info);
+    ExpectInfo(restored.getFileMetaDataByUrl(info.m_url), info);
+    ExpectInfo(restored.getFileMetaDataByFilePath(info.m_absoluteFilePath), info);
     EXPECT_FALSE(fs::exists(info.m_absoluteFilePath));
 }
 
@@ -1012,7 +1012,7 @@ TEST_F(DataManagerTests, InsertReportsPersistenceFailureAndAllowsRetry)
     EXPECT_THROW(manager.insert(added), fs::filesystem_error);
 
     ExpectInfos(manager.getAll(), {original});
-    EXPECT_THROW(manager.getOneByUrl(added.m_url), std::out_of_range);
+    EXPECT_THROW(manager.getFileMetaDataByUrl(added.m_url), std::out_of_range);
     EXPECT_FALSE(fs::exists(m_filePath.string() + ".tmp"));
     fs::remove(m_filePath);
     ASSERT_NO_THROW(manager.insert(added));
@@ -1183,8 +1183,8 @@ TEST_F(DataManagerTests, ConcurrentQueriesObserveConsistentRecordsDuringUpdates)
             ready.wait();
             for (int attempt = 0; attempt < 200; ++attempt)
             {
-                const auto byUrl = manager.getOneByUrl(initial.m_url);
-                const auto byPath = manager.getOneByFilePath(initial.m_absoluteFilePath);
+                const auto byUrl = manager.getFileMetaDataByUrl(initial.m_url);
+                const auto byPath = manager.getFileMetaDataByFilePath(initial.m_absoluteFilePath);
                 const auto all = manager.getAll();
                 if (all.size() != 1) return false;
 

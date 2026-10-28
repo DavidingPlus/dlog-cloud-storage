@@ -151,18 +151,18 @@ void DataManager::update(const FileMetadata &info)
     }
 }
 
-FileMetadata DataManager::getOneByUrl(const std::string &url) const
+FileMetadata DataManager::getFileMetaDataByUrl(const std::string &url) const
 {
     std::shared_lock lock(m_rwlock);
 
     auto it = m_table.find(url);
-    if (m_table.end() == it) throw std::out_of_range("DataManager::getOneByUrl(): URL not found: " + url);
+    if (m_table.end() == it) throw std::out_of_range("DataManager::getFileMetaDataByUrl(): URL not found: " + url);
 
 
     return it->second;
 }
 
-FileMetadata DataManager::getOneByFilePath(const std::filesystem::path &filePath) const
+FileMetadata DataManager::getFileMetaDataByFilePath(const std::filesystem::path &filePath) const
 {
     auto absoluteFilePath = (utils::executableDirectory() / filePath).lexically_normal();
     std::shared_lock lock(m_rwlock);
@@ -172,7 +172,7 @@ FileMetadata DataManager::getOneByFilePath(const std::filesystem::path &filePath
         if (absoluteFilePath == entry.second.m_absoluteFilePath) return entry.second;
     }
 
-    throw std::out_of_range("DataManager::getOneByFilePath(): file path not found: " + filePath.string());
+    throw std::out_of_range("DataManager::getFileMetaDataByFilePath(): file path not found: " + filePath.string());
 }
 
 std::vector<FileMetadata> DataManager::getAll() const
