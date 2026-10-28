@@ -1,5 +1,7 @@
 #include "service_test_util.h"
 
+#include <base64.h>
+
 using namespace service_test;
 
 
@@ -541,6 +543,145 @@ TEST_F(ServiceHttpTests, DoesNotRecursivelyExpandFileListPlaceholdersInsideFilen
     const auto body = http.get("/").m_body;
     EXPECT_NE(body.find("📄{{FILE_LIST}}.txt"), std::string::npos);
     EXPECT_EQ(Count(body, "class='file-item'"), 1U);
+}
+
+TEST_F(ServiceHttpTests, UploadsTextBinaryAndEmptyFilesAndRestoresTheirMetadata)
+{
+    server::Service service;
+    LocalHttpServer http(service);
+    const std::vector<std::pair<std::string, std::string>> files{
+        {"hello.txt", "hello upload\n"},
+        {u8"中文 +.bin", std::string("a\0\xffz", 4)},
+        {"empty.txt", ""}};
+    for (const auto &file : files)
+    {
+        SCOPED_TRACE(file.first);
+        const auto response = http.post("/upload", {{"FileName", base64_encode(file.first)}, {"StorageType", "uncompressed"}}, file.second);
+        ASSERT_EQ(response.m_code, 201);
+        EXPECT_EQ(response.m_contentType, "application/json;charset=utf-8");
+        const auto url = "/download/" + file.first;
+        EXPECT_EQ(utils::JsonUtil::UnSerialize(response.m_body)["url"].asString(), utils::urlEncode(url));
+        const auto path = server::Config::GetInstance().getUncompressedFilesDirPath() / file.first;
+        EXPECT_EQ(utils::FileUtil(path).getContent(), file.second);
+        const auto info = Access::data(service).getFileMetaDataByUrl(url);
+        EXPECT_EQ(info.m_absoluteFilePath, path);
+        EXPECT_EQ(info.m_fileSize, file.second.size());
+        EXPECT_EQ(info.m_mtime, fs::last_write_time(path));
+        server::DataManager restored;
+        EXPECT_EQ(restored.getFileMetaDataByUrl(url).m_absoluteFilePath, path);
+    }
+    EXPECT_EQ(Count(http.get("/").m_body, "class='file-item'"), files.size());
+}
+
+TEST_F(ServiceHttpTests, RejectsInvalidUploadParametersBeforeCreatingFiles)
+{
+    server::Service service;
+    LocalHttpServer http(service);
+    EXPECT_EQ(http.get("/upload").m_code, HTTP_BADMETHOD);
+    for (const char *type : {"unknown", ""})
+        EXPECT_EQ(http.post("/upload", {{"FileName", "YS50eHQ="}, {"StorageType", type}}, "data").m_code, HTTP_BADREQUEST);
+    for (const char *name : {"", "!m9v", "Z"})
+        EXPECT_EQ(http.post("/upload", {{"FileName", name}, {"StorageType", "uncompressed"}}, "data").m_code, HTTP_BADREQUEST);
+    // TODO: 文件名合法性校验补齐后，再恢复目录跳转、路径分隔符、控制字符等非法名称用例。
+    EXPECT_TRUE(Access::data(service).getAll().empty());
+    EXPECT_FALSE(fs::exists(server::Config::GetInstance().getUncompressedFilesDirPath()));
+}
+
+// 分别验证两个字段都缺失、只缺 StorageType、只缺 FileName；应在构造字符串和写文件前返回 400。
+TEST_F(ServiceHttpTests, RejectsMissingUploadHeadersBeforeCreatingFiles)
+{
+    server::Service service;
+    LocalHttpServer http(service);
+    EXPECT_EQ(http.post("/upload", {}, "data").m_code, HTTP_BADREQUEST);
+    EXPECT_EQ(http.post("/upload", {{"FileName", "YS50eHQ="}}, "data").m_code, HTTP_BADREQUEST);
+    EXPECT_EQ(http.post("/upload", {{"StorageType", "uncompressed"}}, "data").m_code, HTTP_BADREQUEST);
+    EXPECT_TRUE(Access::data(service).getAll().empty());
+    EXPECT_FALSE(fs::exists(server::Config::GetInstance().getUncompressedFilesDirPath()));
+}
+
+TEST_F(ServiceHttpTests, UploadsCompressedFilesAndRecordsTheirStoredSize)
+{
+    server::Service service;
+    LocalHttpServer http(service);
+    const std::vector<std::pair<std::string, std::string>> files{
+        {u8"压缩 +.txt", std::string(32768, 'A')},
+        {"binary.bin", std::string("a\0\xffz", 4)},
+        {"empty.txt", ""}};
+    for (const auto &file : files)
+    {
+        SCOPED_TRACE(file.first);
+        const auto response = http.post("/upload", {{"FileName", base64_encode(file.first)}, {"StorageType", "compressed"}}, file.second);
+        ASSERT_EQ(response.m_code, 201);
+        const auto path = server::Config::GetInstance().getCompressedFilesDirPath() / file.first;
+        const auto stored = utils::FileUtil(path).getContent();
+        EXPECT_EQ(utils::FileUtil::UnCompress(stored), file.second);
+        const auto url = "/download/" + file.first;
+        const auto info = Access::data(service).getFileMetaDataByUrl(url);
+        EXPECT_EQ(info.m_absoluteFilePath, path);
+        EXPECT_EQ(info.m_fileSize, stored.size());
+        EXPECT_EQ(info.m_mtime, fs::last_write_time(path));
+        server::DataManager restored;
+        EXPECT_EQ(restored.getFileMetaDataByUrl(url).m_fileSize, stored.size());
+        EXPECT_EQ(utils::JsonUtil::UnSerialize(response.m_body)["url"].asString(), utils::urlEncode(url));
+        // 另一种策略使用同一下载 URL，也必须拒绝，保留原压缩文件。
+        EXPECT_EQ(http.post("/upload", {{"FileName", base64_encode(file.first)}, {"StorageType", "uncompressed"}}, "replacement").m_code, 409);
+        EXPECT_EQ(utils::FileUtil(path).getContent(), stored);
+    }
+    const auto path = server::Config::GetInstance().getCompressedFilesDirPath() / files.front().first;
+    EXPECT_LT(utils::FileUtil(path).fileSize(), files.front().second.size());
+}
+
+TEST_F(ServiceHttpTests, RejectsUploadConflictsAndPreservesExistingData)
+{
+    server::Service service;
+    LocalHttpServer http(service);
+    const std::vector<std::pair<std::string, std::string>> headers{{"FileName", "YS50eHQ="}, {"StorageType", "uncompressed"}};
+    ASSERT_EQ(http.post("/upload", headers, "original").m_code, 201);
+    const auto metadata = utils::FileUtil(m_metadataFile).getContent();
+    const auto path = server::Config::GetInstance().getUncompressedFilesDirPath() / "a.txt";
+    EXPECT_EQ(http.post("/upload", headers, "replacement").m_code, 409);
+    EXPECT_EQ(http.post("/upload", {{"FileName", "YS50eHQ="}, {"StorageType", "compressed"}}, "replacement").m_code, 409);
+    EXPECT_EQ(utils::FileUtil(path).getContent(), "original");
+    EXPECT_EQ(utils::FileUtil(m_metadataFile).getContent(), metadata);
+    // 即使旧文件丢失，已有 URL 也不能被新上传覆盖。
+    fs::remove(path);
+    EXPECT_EQ(http.post("/upload", headers, "replacement").m_code, 409);
+    EXPECT_FALSE(fs::exists(path));
+    // 未登记元数据的磁盘文件也须保留。
+    const auto occupied = path.parent_path() / "occupied.txt";
+    utils::FileUtil(occupied).setContent("keep");
+    EXPECT_EQ(http.post("/upload", {{"FileName", base64_encode(std::string("occupied.txt"))}, {"StorageType", "uncompressed"}}, "replacement").m_code, 409);
+    EXPECT_EQ(utils::FileUtil(occupied).getContent(), "keep");
+    EXPECT_EQ(Access::data(service).getAll().size(), 1U);
+}
+
+TEST_F(ServiceHttpTests, RemovesTheUploadedFileWhenMetadataSavingFailsAndCanRetry)
+{
+    server::Service service;
+    LocalHttpServer http(service);
+    const auto metadata = utils::FileUtil(m_metadataFile).getContent();
+    auto temporary = m_metadataFile;
+    temporary += ".tmp";
+    utils::FileUtil(temporary).setContent("occupied");
+    const std::vector<std::pair<std::string, std::string>> headers{{"FileName", "YS50eHQ="}, {"StorageType", "uncompressed"}};
+    EXPECT_EQ(http.post("/upload", headers, "data").m_code, HTTP_INTERNAL);
+    EXPECT_FALSE(fs::exists(server::Config::GetInstance().getUncompressedFilesDirPath() / "a.txt"));
+    EXPECT_TRUE(Access::data(service).getAll().empty());
+    EXPECT_EQ(utils::FileUtil(m_metadataFile).getContent(), metadata);
+    EXPECT_EQ(utils::FileUtil(temporary).getContent(), "occupied");
+    fs::remove(temporary);
+    EXPECT_EQ(http.post("/upload", headers, "retry").m_code, 201);
+}
+
+TEST_F(ServiceHttpTests, Returns500WhenTheStorageDirectoryCannotBeCreated)
+{
+    server::Service service;
+    LocalHttpServer http(service);
+    const auto directory = server::Config::GetInstance().getUncompressedFilesDirPath();
+    utils::FileUtil(directory).setContent("occupied");
+    EXPECT_EQ(http.post("/upload", {{"FileName", "YS50eHQ="}, {"StorageType", "uncompressed"}}, "data").m_code, HTTP_INTERNAL);
+    EXPECT_EQ(utils::FileUtil(directory).getContent(), "occupied");
+    EXPECT_TRUE(Access::data(service).getAll().empty());
 }
 
 TEST_F(ServiceRoutingTests, IgnoresQueryParametersWhenSelectingTheRootHandler)
