@@ -55,10 +55,10 @@ public:
     // 将整张表写入同目录临时文件后替换正式 JSON；失败时保留原文件并抛出异常。
     void persistToDisk();
 
-    // 按 URL 新增元数据并持久化，入表前对文件路径做词法标准化；URL 已存在时抛出 std::invalid_argument。
+    // 按 URL 新增并持久化，保存失败时撤销新增；路径做词法标准化，URL 已存在时抛出 std::invalid_argument。
     void insert(const FileMetadata &info);
 
-    // 按 URL 更新已有元数据并持久化，入表前对文件路径做词法标准化；URL 不存在时抛出 std::out_of_range。
+    // 按 URL 更新并持久化，保存失败时恢复旧记录；路径做词法标准化，URL 不存在时抛出 std::out_of_range。
     void update(const FileMetadata &info);
 
     // 根据下载 URL 获取元数据副本，未找到时抛出 std::out_of_range。

@@ -109,8 +109,22 @@ void DataManager::persistToDiskUnlocked()
 
 void DataManager::insert(const FileMetadata &info)
 {
-    insertWithoutPersist(info);
-    persistToDisk();
+    auto normalizedInfo = info;
+    normalizedInfo.m_absoluteFilePath = info.m_absoluteFilePath.lexically_normal();
+
+    std::unique_lock lock(m_rwlock);
+    auto inserted = m_table.emplace(info.m_url, std::move(normalizedInfo));
+    if (!inserted.second) throw std::invalid_argument("DataManager::insert(): URL already exists: " + info.m_url);
+
+    try
+    {
+        persistToDiskUnlocked();
+    }
+    catch (...)
+    {
+        m_table.erase(inserted.first);
+        throw;
+    }
 }
 
 void DataManager::update(const FileMetadata &info)
@@ -118,16 +132,21 @@ void DataManager::update(const FileMetadata &info)
     auto normalizedInfo = info;
     normalizedInfo.m_absoluteFilePath = info.m_absoluteFilePath.lexically_normal();
 
+    std::unique_lock lock(m_rwlock);
+    auto it = m_table.find(info.m_url);
+    if (m_table.end() == it) throw std::out_of_range("DataManager::update(): URL not found: " + info.m_url);
+
+    // 用 normalizedInfo 接住旧值，失败时直接交换回来，不复制整张表。
+    std::swap(it->second, normalizedInfo);
+    try
     {
-        std::unique_lock lock(m_rwlock);
-
-        auto it = m_table.find(info.m_url);
-        if (m_table.end() == it) throw std::out_of_range("DataManager::update(): URL not found: " + info.m_url);
-
-        it->second = std::move(normalizedInfo);
+        persistToDiskUnlocked();
     }
-
-    persistToDisk();
+    catch (...)
+    {
+        std::swap(it->second, normalizedInfo);
+        throw;
+    }
 }
 
 FileMetadata DataManager::getOneByUrl(const std::string &url) const
@@ -168,7 +187,7 @@ std::vector<FileMetadata> DataManager::getAll() const
 
 void DataManager::insertWithoutPersist(const FileMetadata &info)
 {
-    // 加载历史记录和直接插入元数据共用此入口，统一保存词法标准化后的路径。
+    // 加载历史记录时使用此入口，统一保存词法标准化后的路径。
     auto normalizedInfo = info;
     normalizedInfo.m_absoluteFilePath = info.m_absoluteFilePath.lexically_normal();
 

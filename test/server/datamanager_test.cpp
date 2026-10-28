@@ -992,6 +992,7 @@ TEST_F(DataManagerTests, PersistToDiskReportsDirectoryAtFilePathAndCanBeRetried)
 
     EXPECT_THROW(manager.persistToDisk(), fs::filesystem_error);
     ExpectInfos(manager.getAll(), {info});
+    EXPECT_FALSE(fs::exists(m_filePath.string() + ".tmp"));
 
     fs::remove(m_filePath);
     ASSERT_NO_THROW(manager.persistToDisk());
@@ -1010,10 +1011,11 @@ TEST_F(DataManagerTests, InsertReportsPersistenceFailureAndAllowsRetry)
 
     EXPECT_THROW(manager.insert(added), fs::filesystem_error);
 
-    // 当前实现先修改内存再写盘；保存失败不会回滚，可通过 persistToDisk() 重试。
-    ExpectInfos(manager.getAll(), {original, added});
+    ExpectInfos(manager.getAll(), {original});
+    EXPECT_THROW(manager.getOneByUrl(added.m_url), std::out_of_range);
+    EXPECT_FALSE(fs::exists(m_filePath.string() + ".tmp"));
     fs::remove(m_filePath);
-    ASSERT_NO_THROW(manager.persistToDisk());
+    ASSERT_NO_THROW(manager.insert(added));
     const server::DataManager restored;
     ExpectInfos(restored.getAll(), {original, added});
 }
@@ -1032,11 +1034,134 @@ TEST_F(DataManagerTests, UpdateReportsPersistenceFailureAndAllowsRetry)
 
     EXPECT_THROW(manager.update(updated), fs::filesystem_error);
 
-    ExpectInfos(manager.getAll(), {updated, other});
+    ExpectInfos(manager.getAll(), {original, other});
+    EXPECT_FALSE(fs::exists(m_filePath.string() + ".tmp"));
     fs::remove(m_filePath);
-    ASSERT_NO_THROW(manager.persistToDisk());
+    ASSERT_NO_THROW(manager.update(updated));
     const server::DataManager restored;
     ExpectInfos(restored.getAll(), {updated, other});
+}
+
+TEST_F(DataManagerTests, ExistingTemporaryFileLeavesMemoryAndOriginalJsonUnchanged)
+{
+    const auto original = MakeInfo("original.txt");
+    const auto added = MakeInfo("added.txt");
+    auto updated = original;
+    updated.m_fileSize = 99;
+    writeRecords({original});
+    server::DataManager manager;
+    const auto body = utils::FileUtil(m_filePath).getContent();
+    const auto temporaryPath = fs::path(m_filePath.string() + ".tmp");
+    utils::FileUtil(temporaryPath).setContent("keep this file");
+
+    EXPECT_THROW(manager.insert(added), fs::filesystem_error);
+    EXPECT_THROW(manager.update(updated), fs::filesystem_error);
+    EXPECT_THROW(manager.persistToDisk(), fs::filesystem_error);
+    ExpectInfos(manager.getAll(), {original});
+    EXPECT_EQ(utils::FileUtil(m_filePath).getContent(), body);
+    EXPECT_EQ(utils::FileUtil(temporaryPath).getContent(), "keep this file");
+
+    fs::remove(temporaryPath);
+    ASSERT_NO_THROW(manager.insert(added));
+    ASSERT_NO_THROW(manager.update(updated));
+    EXPECT_FALSE(fs::exists(temporaryPath));
+    const server::DataManager restored;
+    ExpectInfos(restored.getAll(), {updated, added});
+}
+
+TEST_F(DataManagerTests, DoesNotFollowADanglingSymlinkAtTheTemporaryPath)
+{
+    const auto original = MakeInfo("original.txt");
+    writeRecords({original});
+    server::DataManager manager;
+    const auto body = utils::FileUtil(m_filePath).getContent();
+    const auto temporaryPath = fs::path(m_filePath.string() + ".tmp");
+    const auto outside = m_directory / "outside.txt";
+    fs::create_symlink(outside, temporaryPath);
+
+    EXPECT_THROW(manager.insert(MakeInfo("added.txt")), fs::filesystem_error);
+    ExpectInfos(manager.getAll(), {original});
+    EXPECT_EQ(utils::FileUtil(m_filePath).getContent(), body);
+    EXPECT_TRUE(fs::is_symlink(temporaryPath));
+    EXPECT_FALSE(fs::exists(outside));
+}
+
+TEST_F(DataManagerTests, TemporaryWriteFailurePreservesMemoryAndTheOriginalJson)
+{
+    const auto original = MakeInfo("original.txt");
+    const auto added = MakeInfo("added.txt");
+    auto updated = original;
+    updated.m_fileSize = 99;
+    writeRecords({original});
+    server::DataManager manager;
+    const auto body = utils::FileUtil(m_filePath).getContent();
+    const auto parent = m_filePath.parent_path();
+    const auto permissions = fs::status(parent).permissions();
+    fs::permissions(parent, fs::perms::owner_read | fs::perms::owner_exec);
+    std::ofstream probe(parent / "probe");
+    if (probe.is_open())
+    {
+        fs::permissions(parent, permissions);
+        GTEST_SKIP() << "The current user can create files without directory write permission";
+    }
+
+    EXPECT_THROW(manager.insert(added), std::ios_base::failure);
+    EXPECT_THROW(manager.update(updated), std::ios_base::failure);
+    EXPECT_THROW(manager.persistToDisk(), std::ios_base::failure);
+    fs::permissions(parent, permissions);
+
+    ExpectInfos(manager.getAll(), {original});
+    EXPECT_EQ(utils::FileUtil(m_filePath).getContent(), body);
+    EXPECT_FALSE(fs::exists(m_filePath.string() + ".tmp"));
+    const server::DataManager beforeRetry;
+    ExpectInfos(beforeRetry.getAll(), {original});
+
+    ASSERT_NO_THROW(manager.insert(added));
+    ASSERT_NO_THROW(manager.update(updated));
+    const server::DataManager restored;
+    ExpectInfos(restored.getAll(), {updated, added});
+}
+
+TEST_F(DataManagerTests, AtomicReplacementPreservesMetadataFilePermissions)
+{
+    server::DataManager manager;
+    const auto permissions = fs::perms::owner_read | fs::perms::owner_write | fs::perms::group_read;
+    fs::permissions(m_filePath, permissions);
+    ASSERT_NO_THROW(manager.insert(MakeInfo("added.txt")));
+    EXPECT_EQ(fs::status(m_filePath).permissions(), permissions);
+    EXPECT_FALSE(fs::exists(m_filePath.string() + ".tmp"));
+}
+
+TEST_F(DataManagerTests, ConcurrentInsertsAndExplicitSavesDoNotLoseRecords)
+{
+    const auto original = MakeInfo("original.txt");
+    writeRecords({original});
+    server::DataManager manager;
+    std::promise<void> start;
+    const auto ready = start.get_future().share();
+    std::vector<server::FileMetadata> expected{original};
+    std::vector<std::future<void>> writers;
+    for (int index = 0; index < 8; ++index)
+    {
+        const auto info = MakeInfo("added-" + std::to_string(index) + ".txt");
+        expected.emplace_back(info);
+        writers.emplace_back(std::async(std::launch::async, [&manager, ready, info]
+                                        {
+            ready.wait();
+            manager.insert(info); }));
+    }
+    auto saver = std::async(std::launch::async, [&manager, ready]
+                            {
+        ready.wait();
+        for (int attempt = 0; attempt < 8; ++attempt) manager.persistToDisk(); });
+    start.set_value();
+    for (auto &writer : writers) EXPECT_NO_THROW(writer.get());
+    EXPECT_NO_THROW(saver.get());
+
+    ExpectInfos(manager.getAll(), expected);
+    const server::DataManager restored;
+    ExpectInfos(restored.getAll(), expected);
+    EXPECT_FALSE(fs::exists(m_filePath.string() + ".tmp"));
 }
 
 
