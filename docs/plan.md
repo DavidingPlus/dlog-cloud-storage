@@ -249,7 +249,7 @@ TODO：后续补充 SIGINT/SIGTERM 的正常停止流程，包括停止接收新
 
 当前阶段继续采用参考实现的持久化模型：启动时全量加载 JSON 元数据到内存表，运行时查询内存表，插入或更新后同步保存整张表。按需读取和增量持久化列入[元数据存储优化](#元数据存储优化)，后续再评估。
 
-HTTP 上传接入前需要补齐失败状态处理：当前 `DataManager::insert()`、`update()` 先修改内存，再直接覆盖 JSON 文件，保存失败会传播异常但不会回滚内存，现有测试已覆盖这个行为。要满足本步骤的上传验收，应在保留全量 JSON 持久化模型的前提下，改为将候选元数据写入同目录临时文件，成功替换正式文件后再提交内存状态；失败时保留原有内存表和正式元数据，并同步更新相关测试。仅在 `Service` 中捕获异常、删除上传文件，无法消除当前内存表中的新增记录。
+元数据保存失败的回滚已实现：`insert()`、`update()` 和 `persistToDisk()` 共用写锁，保存期间不会向查询暴露中间状态。新增失败时删除刚插入的记录，更新失败时交换回旧记录，只保留单条记录的旧值。JSON 先完整写入同目录的 `metadata.json.tmp`（实际名称为配置路径加 `.tmp`），关闭后再替换正式文件；失败时清理本次临时文件并保留原 JSON。已有临时路径会报错并保留，核对清理后可重试。上传仍为空实现，后续接入时再处理上传文件本身的失败清理。
 
 服务端运行于 Linux，需验证临时文件替换和失败清理。这里处理的是正常运行中的失败，第一版不承诺突然断电时的事务恢复。
 
@@ -339,13 +339,13 @@ rtk xmake test -y tests/server
 
 1. 启动时由 `loadFromDisk()` 读取整个元数据文件，恢复 `m_table`。
 2. 运行期间通过 `m_table` 查询和修改记录。
-3. 插入或更新后调用 `persistToDisk()`，把整张表序列化为 JSON，并覆盖保存元数据文件。
+3. 插入、更新和显式保存均在写锁内，将整张表序列化到同目录临时文件，完整写入后替换正式 JSON。
 
-接口约定：`insert(info)` 只新增记录，URL 已存在时抛出 `std::invalid_argument`；`update(info)` 只更新已有记录，URL 不存在时抛出 `std::out_of_range`。两者修改后都持久化，保存失败时传播异常。私有函数 `insertWithoutPersist(info)` 只向内存表新增记录，URL 重复时同样报错，供 `loadFromDisk()` 加载历史元数据时调用。
+接口约定：`insert(info)` 只新增记录，URL 已存在时抛出 `std::invalid_argument`；`update(info)` 只更新已有记录，URL 不存在时抛出 `std::out_of_range`。两者保存失败时恢复原有内存状态，并向调用方传播异常。私有函数 `insertWithoutPersistUnlocked(info)` 统一完成路径标准化、URL 唯一性检查和内存插入，由 `loadFromDisk()` 与 `insert()` 在持有写锁时调用，不重复加锁、不写磁盘。`insert()` 入表成功后才保存，保存失败时删除本次新增记录；重复 URL 在入表阶段直接抛出，不会误删旧记录。
 
-上述先修改内存再写盘的流程是当前实现行为。接入 HTTP 上传时，按第 6.1 节第 4 步补齐失败时保留原有状态的提交流程，仍沿用内存表与 JSON 全量保存模型。
+当前仍沿用内存表与 JSON 全量保存模型，失败时通过撤销新增或恢复旧记录保持一致；保存过程使用私有的 `persistToDiskUnlocked()`，避免重复获取写锁。
 
-路径约定：配置文件、存储文件和元数据持久化文件的相对路径都以可执行文件所在目录为基准。`config/server.conf` 通过 `compressed_files_dir`、`uncompressed_files_dir` 和 `metadata_file` 提供路径，`Config` 构造时通过 `readConfig()` 将相对路径解析为绝对路径，并对解析结果和显式配置的绝对路径统一调用 `lexically_normal()`，再次读取配置时沿用相同规则。`FileMetadata::FromFile()` 始终保存经过词法标准化的绝对路径；持久化字段 `absolute_file_path` 保存文件绝对路径。`insert()`、`update()` 按 `FileMetadata` 已保存绝对路径的约定接收元数据，并在入表前进行词法标准化；`loadFromDisk()` 复用 `insertWithoutPersist()` 标准化历史记录，仅在后续持久化时才将标准化后的路径写回 JSON。`DataManager` 构造时直接保存 `Config::getMetadataFilePath()` 返回的绝对路径，加载和保存使用同一路径，不受工作目录变化影响。
+路径约定：配置文件、存储文件和元数据持久化文件的相对路径都以可执行文件所在目录为基准。`config/server.conf` 通过 `compressed_files_dir`、`uncompressed_files_dir` 和 `metadata_file` 提供路径，`Config` 构造时通过 `readConfig()` 将相对路径解析为绝对路径，并对解析结果和显式配置的绝对路径统一调用 `lexically_normal()`，再次读取配置时沿用相同规则。`FileMetadata::FromFile()` 始终保存经过词法标准化的绝对路径；持久化字段 `absolute_file_path` 保存文件绝对路径。`insert()`、`update()` 按 `FileMetadata` 已保存绝对路径的约定接收元数据，并在入表前进行词法标准化；`loadFromDisk()` 复用 `insertWithoutPersistUnlocked()` 标准化历史记录，仅在后续持久化时才将标准化后的路径写回 JSON。`DataManager` 构造时直接保存 `Config::getMetadataFilePath()` 返回的绝对路径，加载和保存使用同一路径，不受工作目录变化影响。
 
 `Config` 中的三个文件系统路径、`FileMetadata::m_absoluteFilePath`、`DataManager::m_metadataFilePath` 和相关路径入参统一使用 `std::filesystem::path`。服务端固定运行于 Linux，文件名和 JSON 路径统一约定使用 UTF-8；读入时将字符串赋给 `path`，写出时调用 `string()`。`getOneByFilePath()` 将查询路径按可执行文件目录解析为绝对路径，再调用 `lexically_normal()`，与记录中的标准化路径比较，支持 `.`、`..` 等写法差异。该查询不要求实际文件存在，也不解析符号链接。词法标准化仅处理路径表示；若路径中存在符号链接，消去其后的 `..` 可能改变实际访问目标。
 
