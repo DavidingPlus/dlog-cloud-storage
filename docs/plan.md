@@ -69,7 +69,7 @@ flowchart LR
 | `src/server/config.h/.cpp` | 已实现服务地址、端口、下载前缀、文件目录、元数据路径和压缩格式配置 |
 | `src/utils/fileutil.h/.cpp`、`src/utils/common.h/.cpp` | 已实现路径定位、二进制读写、目录操作、压缩解压、URL 编解码与 HTML 文本转义；文件名校验等按需补充 |
 | `src/server/datamanager.h/.cpp` | 已实现 `FileMetadata`、内存查询、JSON 持久化和启动恢复 |
-| `src/server/service.h/.cpp` | 待实现 libevent 生命周期、路由和请求处理，以及上传存储类型枚举 |
+| `src/server/service.h/.cpp` | 已实现 HTTP 监听、路由、列表页面和两种上传策略，上传参数解析为存储类型枚举；下载处理待实现 |
 | `src/server/web/template.html` | 服务端页面模板，包含文件选择、上传、列表和下载链接 |
 | `src/server/config/server.conf` | 服务端 JSON 运行配置，区别于 XMake 生成的编译配置头文件 |
 
@@ -88,7 +88,7 @@ flowchart LR
 
 压缩文件的 `m_fileSize` 表示压缩处理后的磁盘文件大小，页面显示为“存储大小”。若后续需要展示原始大小，再扩展元数据并处理旧 JSON 的加载兼容。`m_mtime` 使用 `std::filesystem::file_time_type`，展示为日历时间前需要转换时钟，不能直接当作 `time_t` 传给 `std::ctime()`。
 
-第一版同名上传返回冲突，保留已有文件。由于下载 URL 仅由前缀和文件名组成，两种存储策略之间的同名文件也视为冲突。名称判断还要考虑当前文件系统的大小写规则。文件名只能表示一个文件，拒绝目录分隔符、绝对路径、`.`、`..`、控制字符及当前平台不支持的名称。文件路径统一由服务端拼接。
+第一版同名上传返回冲突，保留已有文件。由于下载 URL 仅由前缀和文件名组成，两种存储策略之间的同名文件也视为冲突。名称判断还要考虑当前文件系统的大小写规则。文件名合法性校验暂列 TODO；后续要求名称只表示一个文件，拒绝目录分隔符、绝对路径、`.`、`..`、控制字符及当前平台不支持的名称。文件路径由服务端使用配置目录和解码后的名称组合。
 
 ## 4. dlog 能力与接入生命周期
 
@@ -145,7 +145,7 @@ DLOG_INFO() << "upload finished, file=" << filename
 | 请求头 | 约定 |
 | --- | --- |
 | `Content-Type` | `application/octet-stream`，请求体直接存放原始文件字节 |
-| `FileName` | 必填；将原始文件名的 UTF-8 字节按标准 Base64 编码。服务端解码后校验文件名 |
+| `FileName` | 必填；将原始文件名的 UTF-8 字节按标准 Base64 编码。服务端解码，文件名合法性校验后续补齐 |
 | `StorageType` | 必填；取值统一使用小写，仅接受 `uncompressed` 或 `compressed` |
 
 | `StorageType` 取值 | 服务端行为 | 对应配置 |
@@ -167,7 +167,7 @@ StorageType: uncompressed
 
 压缩存储只需将对应请求头改为 `StorageType: compressed`，请求体仍为原始文件字节。`StorageType` 描述服务端采用的存储策略，客户端无需预先压缩，也不指定压缩算法。bundle 对不适合压缩的内容可能保留原始字节，因此选择 `compressed` 不保证磁盘文件一定更小。
 
-后端解析请求头后立即转换成枚举，业务逻辑按枚举分支处理：
+当前 `Upload()` 先检查请求头原始指针是否为 `nullptr`，再构造 `std::string encodedFileName`、`std::string storageTypeText`，并检查 FileName 空值。本文件匿名命名空间中的 `parseStorageType()` 负责存储策略字符串的校验和枚举转换：只接受 `uncompressed`、`compressed`，空串或未知值抛出 `std::invalid_argument`；`Upload()` 捕获该异常并返回 400。后续目录选择和是否压缩均按枚举判断：
 
 ```cpp
 enum class StorageType
@@ -177,7 +177,7 @@ enum class StorageType
 };
 ```
 
-`FileName` 或 `StorageType` 缺失、空值、文件名 Base64 编码非法或解码后的文件名不合法，以及未知存储类型，均返回 `400 Bad Request`。第一阶段只实现 `StorageType: uncompressed`；压缩功能完成前收到 `compressed` 时也返回 400，明确说明当前尚不支持该策略。第二阶段完成后接受两种策略。
+完整协议要求：`FileName` 或 `StorageType` 缺失、空值、文件名 Base64 编码非法或解码后的文件名不合法，以及未知存储类型，均返回 `400 Bad Request`。当前支持两种策略，检查字段缺失及空值，并按 cpp-base64 的规则解码；解码后的文件名合法性校验暂列 TODO。解码库报告的错误返回 400；严格编码格式校验留 TODO，后续由编解码工具层统一提供。请求头缺失时 `evhttp_find_header()` 返回 `nullptr`，在构造 `std::string` 前返回 400；指针有效但字段值为空时，由后面的 `empty()` 检查返回 400。缺失字段回归测试已启用。文件名的空名称、`.`、`..`、路径分隔符、控制字符、UTF-8 有效性和长度等检查后续统一补齐。
 
 其他失败使用 404（文件或路径不存在）、405（方法不支持）、409（同名冲突）、413（文件过大）、500（内部读写失败）。上传参数统一从请求头读取。
 
@@ -198,13 +198,13 @@ enum class StorageType
 | `static GetETag(const FileMetadata &)` | 根据元数据生成 ETag |
 | `static Download(evhttp_request *, void *)` | 按请求路径查找元数据，读取或解压后返回原始字节 |
 
-请求处理函数统一保留参考实现的 `(evhttp_request *, void *)` 参数，不预先拆分实例分发函数或注入 `DataManager`。`run()` 已实现事件循环和 HTTP 服务创建、配置地址与端口监听，以及通用回调注册；注册 `GenericCallback` 时以 `this` 作为上下文。资源以智能指针管理，按 HTTP 服务、事件循环的顺序自动释放；正常结束直接返回，创建事件循环或 HTTP 服务、绑定监听、运行事件循环失败时抛出 `std::runtime_error`。暂不添加信号处理，停止流程后续再补充。文件时间、文件大小、列表 HTML 和 ETag 辅助函数已实现；`GenericCallback()` 已实现请求分发，`ShowFileList()` 已实现页面响应，`Upload()`、`Download()` 仍为空实现；断点下载仍按第 7 节后续实施。
+请求处理函数统一保留参考实现的 `(evhttp_request *, void *)` 参数，不预先拆分实例分发函数或注入 `DataManager`。`run()` 已实现事件循环和 HTTP 服务创建、配置地址与端口监听，以及通用回调注册；注册 `GenericCallback` 时以 `this` 作为上下文。资源以智能指针管理，按 HTTP 服务、事件循环的顺序自动释放；正常结束直接返回，创建事件循环或 HTTP 服务、绑定监听、运行事件循环失败时抛出 `std::runtime_error`。暂不添加信号处理，停止流程后续再补充。文件时间、文件大小、列表 HTML 和 ETag 辅助函数已实现；`GenericCallback()` 已实现请求分发，`ShowFileList()` 已实现页面响应，`Upload()` 已实现直接保存和压缩保存的基础流程，`Download()` 仍为空实现；断点下载仍按第 7 节后续实施。
 
 本节骨架先沿用参考实现的 `ShowFileList()` 页面生成职责；上方协议和第 6 节中的独立 `/files` 接口作为原计划保留，后续确定是否拆分时再统一调整。
 
 `Service` 通过对象成员 `DataManager m_dataManager` 拥有元数据管理器，其生命周期随服务对象管理，构造时加载持久化文件。`ShowFileList()` 通过回调参数 `arg` 取回当前 `Service`，调用 `m_dataManager.getAll()`，读取可执行文件旁的 `web/template.html`，用 `std::regex_replace()` 替换 `{{FILE_LIST}}` 和 `{{BACKEND_URL}}`，最后写入请求的输出缓冲区，以 `text/html;charset=utf-8` 返回 HTTP 200。后端地址由配置中的 IP 和端口拼接。
 
-`GenericCallback()` 当前按参考流程提取 URI 路径并进行 URL 解码，再依次判断：路径中包含配置下载前缀时调用 `Download()`，路径等于 `/upload` 时调用 `Upload()`，路径等于 `/` 时调用 `ShowFileList()`，其余返回 404。请求方法校验、回调异常处理和独立 `/files` 接口后续再补充。下载接入时再统一路径传递，避免对已解码的字符串重复解码。
+`GenericCallback()` 当前按参考流程提取 URI 路径并进行 URL 解码，再依次判断：路径中包含配置下载前缀时调用 `Download()`，路径等于 `/upload` 时调用 `Upload()`，路径等于 `/` 时调用 `ShowFileList()`，其余返回 404。`Upload()` 已校验 POST；其他请求方法校验、统一回调异常处理和独立 `/files` 接口后续再补充。下载接入时再统一路径传递，避免对已解码的字符串重复解码。
 
 启动阶段按“配置与日志 → 数据目录及缺失的元数据文件初始化 → 构造 `Service`（同时构造并加载成员 `DataManager`）→ `Service::run()`”组织。元数据文件必须在构造 `Service` 前准备好，缺失或加载失败会使构造抛出异常；当前 `main()` 尚未接入此启动流程。回调异常处理和服务停止流程后续再补齐，当前不额外增加类接口；退出后按第 4 节关闭日志。
 
@@ -249,7 +249,7 @@ TODO：后续补充 SIGINT/SIGTERM 的正常停止流程，包括停止接收新
 
 当前阶段继续采用参考实现的持久化模型：启动时全量加载 JSON 元数据到内存表，运行时查询内存表，插入或更新后同步保存整张表。按需读取和增量持久化列入[元数据存储优化](#元数据存储优化)，后续再评估。
 
-元数据保存失败的回滚已实现：`insert()`、`update()` 和 `persistToDisk()` 共用写锁，保存期间不会向查询暴露中间状态。新增失败时删除刚插入的记录，更新失败时交换回旧记录，只保留单条记录的旧值。JSON 先完整写入同目录的 `metadata.json.tmp`（实际名称为配置路径加 `.tmp`），关闭后再替换正式文件；失败时清理本次临时文件并保留原 JSON。已有临时路径会报错并保留，核对清理后可重试。上传仍为空实现，后续接入时再处理上传文件本身的失败清理。
+元数据保存失败的回滚已实现：`insert()`、`update()` 和 `persistToDisk()` 共用写锁，保存期间不会向查询暴露中间状态。新增失败时删除刚插入的记录，更新失败时交换回旧记录，只保留单条记录的旧值。JSON 先完整写入同目录的 `metadata.json.tmp`（实际名称为配置路径加 `.tmp`），关闭后再替换正式文件；失败时清理本次临时文件并保留原 JSON。已有临时路径会报错并保留，核对清理后可重试。上传基础流程已接入：保存文件或元数据失败时返回 500，并尝试清理本次上传文件。
 
 服务端运行于 Linux，需验证临时文件替换和失败清理。这里处理的是正常运行中的失败，第一版不承诺突然断电时的事务恢复。
 
@@ -257,12 +257,14 @@ TODO：后续补充 SIGINT/SIGTERM 的正常停止流程，包括停止接收新
 
 #### 第 5 步：接入 HTTP 上传
 
-1. 使用第 5 节约定的 `POST /upload`，读取 `FileName`、`StorageType` 请求头，将 UTF-8 文件名从 Base64 解码，将存储策略转换为 `StorageType` 枚举，并读取二进制请求体。
-2. 校验必填请求头、编码、文件名、大小限制、目标路径占用和下载 URL 冲突；第一阶段只接受 `uncompressed`，允许零字节文件。请求体大小限制应同时设置在 HTTP 接收层，并在业务处理分配内存前检查实际长度。
-3. 将文件保存到 `getUncompressedFilesDirPath()` 对应目录，使用最终文件路径调用 `FileMetadata::FromFile()`，插入并持久化元数据；全部成功后返回 201 和结果 JSON。
+当前上传先检查 POST、请求头缺失及空值，将存储策略解析为枚举后再解码文件名，并通过按 URL 查询及磁盘路径检查拒绝同名；校验通过后才复制二进制正文、创建目录，直接保存或按 `bundle_format` 压缩后保存，再生成并持久化元数据，成功返回 201 和包含下载 `url` 的 JSON。允许零字节文件；元数据保存失败时由 DataManager 回滚内存，本函数尝试清理本次文件。`encodedFileName`、`storageTypeText` 在原始指针判空后构造为 `std::string`，FileName 通过 `empty()` 检查空值；`storageTypeText` 交给匿名命名空间函数 `parseStorageType()` 校验并转换为 `StorageType storageType`，参数异常由 Upload 转为 400，后续业务分支统一使用枚举。严格 Base64 校验留待编解码工具层统一提供，Upload 不再重新编码比对。文件名合法性校验（含空名称、目录跳转、路径分隔符、控制字符、UTF-8 与长度）、上传大小限制、并发排他创建、日志及清理错误报告均留 TODO。
+
+1. 使用第 5 节约定的 `POST /upload`，读取 `FileName`、`StorageType` 请求头，将 UTF-8 文件名从 Base64 解码，将请求头字符串解析为 `StorageType` 枚举并按枚举判断存储策略，并读取二进制请求体。
+2. 校验必填请求头、编码、文件名、大小限制、目标路径占用和下载 URL 冲突；接受 `uncompressed` 和 `compressed`，允许零字节文件。请求体大小限制应同时设置在 HTTP 接收层，并在业务处理分配内存前检查实际长度。
+3. 未压缩策略将正文直接保存到 `getUncompressedFilesDirPath()`；压缩策略调用 `FileUtil::Compress()` 后保存到 `getCompressedFilesDirPath()`。使用最终文件路径调用 `FileMetadata::FromFile()`，插入并持久化元数据；全部成功后返回 201 和结果 JSON。
 4. 日志记录文件名、大小、结果和错误原因，正文保持简短。
 
-验收：先用 HTTP 工具上传文本、二进制和零字节文件；磁盘内容一致，元数据正确；缺失请求头、非法 Base64、未知存储类型等返回 400；失败响应不会出现成功条目。
+验收：先用 HTTP 工具上传文本、二进制和零字节文件；磁盘内容一致，元数据正确；缺失请求头、解码库报告的 Base64 错误、未知存储类型等返回 400；失败响应不会出现成功条目。
 
 #### 第 6 步：列表与下载
 
@@ -314,7 +316,7 @@ rtk xmake test -y tests/server
 
 ### 6.2 第二阶段：压缩存储
 
-普通存储验收通过后，再补齐参考项目的另一种核心存储方式。
+压缩上传已接入，使用配置的算法压缩后保存，并按磁盘实际大小记录元数据；测试覆盖可压缩文本、二进制和空文件，以及两种策略之间的同名保护。下载解压仍待接入，以下其余整体验收后续补齐。
 
 1. 复用已接入的 bundle 和压缩往返测试，核对配置中的 `bundle_format`；沿用参考项目时采用 LZIP 格式。
 2. 复用 `FileUtil::Compress()`、`FileUtil::UnCompress()` 和已有的压缩文件目录配置。
@@ -347,7 +349,7 @@ rtk xmake test -y tests/server
 
 路径约定：配置文件、存储文件和元数据持久化文件的相对路径都以可执行文件所在目录为基准。`config/server.conf` 通过 `compressed_files_dir`、`uncompressed_files_dir` 和 `metadata_file` 提供路径，`Config` 构造时通过 `readConfig()` 将相对路径解析为绝对路径，并对解析结果和显式配置的绝对路径统一调用 `lexically_normal()`，再次读取配置时沿用相同规则。`FileMetadata::FromFile()` 始终保存经过词法标准化的绝对路径；持久化字段 `absolute_file_path` 保存文件绝对路径。`insert()`、`update()` 按 `FileMetadata` 已保存绝对路径的约定接收元数据，并在入表前进行词法标准化；`loadFromDisk()` 复用 `insertWithoutPersistUnlocked()` 标准化历史记录，仅在后续持久化时才将标准化后的路径写回 JSON。`DataManager` 构造时直接保存 `Config::getMetadataFilePath()` 返回的绝对路径，加载和保存使用同一路径，不受工作目录变化影响。
 
-`Config` 中的三个文件系统路径、`FileMetadata::m_absoluteFilePath`、`DataManager::m_metadataFilePath` 和相关路径入参统一使用 `std::filesystem::path`。服务端固定运行于 Linux，文件名和 JSON 路径统一约定使用 UTF-8；读入时将字符串赋给 `path`，写出时调用 `string()`。`getOneByFilePath()` 将查询路径按可执行文件目录解析为绝对路径，再调用 `lexically_normal()`，与记录中的标准化路径比较，支持 `.`、`..` 等写法差异。该查询不要求实际文件存在，也不解析符号链接。词法标准化仅处理路径表示；若路径中存在符号链接，消去其后的 `..` 可能改变实际访问目标。
+`Config` 中的三个文件系统路径、`FileMetadata::m_absoluteFilePath`、`DataManager::m_metadataFilePath` 和相关路径入参统一使用 `std::filesystem::path`。服务端固定运行于 Linux，文件名和 JSON 路径统一约定使用 UTF-8；读入时将字符串赋给 `path`，写出时调用 `string()`。`getFileMetaDataByFilePath()` 将查询路径按可执行文件目录解析为绝对路径，再调用 `lexically_normal()`，与记录中的标准化路径比较，支持 `.`、`..` 等写法差异。该查询不要求实际文件存在，也不解析符号链接。词法标准化仅处理路径表示；若路径中存在符号链接，消去其后的 `..` 可能改变实际访问目标。
 
 这套流程处理的是文件元数据，上传文件的实际内容仍通过各自的存储路径读写。它便于理解和实现，但内存占用随记录数量增长，每次修改也需要序列化和写入全部记录。后续结合元数据数量、修改频率、加载耗时、内存占用和保存耗时决定是否调整。
 
