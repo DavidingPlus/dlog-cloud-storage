@@ -77,8 +77,8 @@ private:
     // 调用方已持有写锁，避免 insert()/update() 保存时重复加锁。
     void persistToDiskUnlocked();
 
-    // 对文件路径做词法标准化后，仅向内存表新增元数据；URL 重复时抛出 std::invalid_argument，供启动加载使用。
-    void insertWithoutPersist(const FileMetadata &info);
+    // 调用方已持有写锁；标准化路径并向内存表新增记录，URL 重复时抛出 std::invalid_argument，不写磁盘。
+    void insertWithoutPersistUnlocked(const FileMetadata &info);
 
 
     // 元数据持久化文件的绝对路径。

@@ -39,7 +39,9 @@ void DataManager::loadFromDisk()
     auto root = utils::JsonUtil::UnSerialize(file.getContent());
     if (!root.isArray()) throw std::invalid_argument("DataManager::loadFromDisk(): root must be an array");
 
-    // 将反序列化得到的 Json::Value 中的数据添加到 m_table 中。
+    // 加锁后逐条恢复内存表，入表函数内部不再重复加锁，也不写回磁盘。
+    std::unique_lock lock(m_rwlock);
+
     for (auto &item : root)
     {
         if (!item.isObject() || !item["mtime"].isInt64() || !item["file_size"].isUInt64() || !item["absolute_file_path"].isString() || !item["url"].isString()) throw std::invalid_argument("DataManager::loadFromDisk(): invalid storage info");
@@ -52,13 +54,14 @@ void DataManager::loadFromDisk()
         info.m_absoluteFilePath = item["absolute_file_path"].asString();
         info.m_url = item["url"].asString();
 
-        insertWithoutPersist(info);
+        insertWithoutPersistUnlocked(info);
     }
 }
 
 void DataManager::persistToDisk()
 {
     std::unique_lock lock(m_rwlock);
+
     persistToDiskUnlocked();
 }
 
@@ -109,12 +112,10 @@ void DataManager::persistToDiskUnlocked()
 
 void DataManager::insert(const FileMetadata &info)
 {
-    auto normalizedInfo = info;
-    normalizedInfo.m_absoluteFilePath = info.m_absoluteFilePath.lexically_normal();
-
     std::unique_lock lock(m_rwlock);
-    auto inserted = m_table.emplace(info.m_url, std::move(normalizedInfo));
-    if (!inserted.second) throw std::invalid_argument("DataManager::insert(): URL already exists: " + info.m_url);
+
+    // 入表成功后才进入保存与回滚流程，重复 URL 直接抛出，不会误删旧记录。
+    insertWithoutPersistUnlocked(info);
 
     try
     {
@@ -122,7 +123,7 @@ void DataManager::insert(const FileMetadata &info)
     }
     catch (...)
     {
-        m_table.erase(inserted.first);
+        m_table.erase(info.m_url);
         throw;
     }
 }
@@ -133,6 +134,7 @@ void DataManager::update(const FileMetadata &info)
     normalizedInfo.m_absoluteFilePath = info.m_absoluteFilePath.lexically_normal();
 
     std::unique_lock lock(m_rwlock);
+
     auto it = m_table.find(info.m_url);
     if (m_table.end() == it) throw std::out_of_range("DataManager::update(): URL not found: " + info.m_url);
 
@@ -185,17 +187,14 @@ std::vector<FileMetadata> DataManager::getAll() const
     return infos;
 }
 
-void DataManager::insertWithoutPersist(const FileMetadata &info)
+void DataManager::insertWithoutPersistUnlocked(const FileMetadata &info)
 {
-    // 加载历史记录时使用此入口，统一保存词法标准化后的路径。
+    // 锁和持久化由调用方负责。
     auto normalizedInfo = info;
     normalizedInfo.m_absoluteFilePath = info.m_absoluteFilePath.lexically_normal();
 
-    std::unique_lock lock(m_rwlock);
-
-    if (m_table.end() != m_table.find(info.m_url)) throw std::invalid_argument("DataManager::insertWithoutPersist(): URL already exists: " + info.m_url);
-
-    m_table[info.m_url] = std::move(normalizedInfo);
+    auto inserted = m_table.emplace(info.m_url, std::move(normalizedInfo));
+    if (!inserted.second) throw std::invalid_argument("DataManager::insertWithoutPersistUnlocked(): URL already exists: " + info.m_url);
 }
 
 
