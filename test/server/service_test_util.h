@@ -159,8 +159,11 @@ namespace service_test
         explicit LocalHttpServer(server::Service &service);
         uint16_t port() const;
         Response get(const std::string &uri);
+        Response post(const std::string &uri, const std::vector<std::pair<std::string, std::string>> &headers, const std::string &body);
 
     private:
+
+        Response request(evhttp_cmd_type method, const std::string &uri, const std::vector<std::pair<std::string, std::string>> &headers, const std::string &body);
 
         struct Result
         {

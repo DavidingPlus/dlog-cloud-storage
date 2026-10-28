@@ -212,6 +212,16 @@ namespace service_test
 
     Response LocalHttpServer::get(const std::string &uri)
     {
+        return request(EVHTTP_REQ_GET, uri, {}, "");
+    }
+
+    Response LocalHttpServer::post(const std::string &uri, const std::vector<std::pair<std::string, std::string>> &headers, const std::string &body)
+    {
+        return request(EVHTTP_REQ_POST, uri, headers, body);
+    }
+
+    Response LocalHttpServer::request(evhttp_cmd_type method, const std::string &uri, const std::vector<std::pair<std::string, std::string>> &headers, const std::string &body)
+    {
         Result result{m_base.get(), {}, false};
         std::unique_ptr<evhttp_connection, decltype(&evhttp_connection_free)> connection(
             evhttp_connection_base_new(m_base.get(), nullptr, "127.0.0.1", m_port), evhttp_connection_free);
@@ -221,8 +231,11 @@ namespace service_test
         if (!request) throw std::runtime_error("cannot allocate test HTTP request");
         evhttp_add_header(evhttp_request_get_output_headers(request.get()), "Host", "127.0.0.1");
         evhttp_add_header(evhttp_request_get_output_headers(request.get()), "Connection", "close");
+        for (const auto &header : headers)
+            evhttp_add_header(evhttp_request_get_output_headers(request.get()), header.first.data(), header.second.data());
+        evbuffer_add(evhttp_request_get_output_buffer(request.get()), body.data(), body.size());
         // make_request() 接管 request；成功与失败都不再由调用方释放。
-        if (0 != evhttp_make_request(connection.get(), request.release(), EVHTTP_REQ_GET, uri.data()))
+        if (0 != evhttp_make_request(connection.get(), request.release(), method, uri.data()))
             throw std::runtime_error("cannot schedule test HTTP request");
 
         std::unique_ptr<event, decltype(&event_free)> timeout(evtimer_new(m_base.get(), OnTimeout, m_base.get()), event_free);
