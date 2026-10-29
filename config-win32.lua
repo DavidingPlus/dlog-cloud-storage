@@ -7,9 +7,8 @@ function define_win32_options()
 end
 
 function apply_win32_target_config()
-    add_cxflags("/utf-8")
-    -- UTF8-CPP 根据 __cplusplus 启用 C++17 接口；让 MSVC 报告实际使用的语言标准。
-    add_cxxflags("/Zc:__cplusplus")
+    -- /Zc:__cplusplus：让 MSVC 的 __cplusplus 宏反映当前启用的 C++ 标准版本。若不启用，MSVC 默认仍会报告旧值，可能会导致意料外的问题。
+    add_cxflags("/utf-8", "/Zc:__cplusplus")
 
     -- 只在 debug 模式下添加调试信息。
     if is_mode("debug") then
