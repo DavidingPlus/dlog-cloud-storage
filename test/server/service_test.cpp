@@ -785,6 +785,156 @@ TEST_F(ServiceHttpTests, Returns500WhenTheUploadedFileCannotBeOpenedAndCanRetry)
     EXPECT_EQ(utils::FileUtil(directory / "a.txt").getContent(), "retry");
 }
 
+TEST_F(ServiceHttpTests, DownloadsUncompressedUploadsAsOriginalBytes)
+{
+    server::Service service;
+    LocalHttpServer http(service);
+    // 已压缩的内容也可以按普通存储上传，下载必须原样返回，不能根据内容猜测是否解压。
+    const std::vector<std::pair<std::string, std::string>> files{
+        {"hello.txt", "hello download\n"},
+        {u8"中文 空格+%?#.bin", std::string("a\0\xffz", 4)},
+        {"empty.txt", ""},
+        {"literal%2F.txt", "percent filename"},
+        {"already-packed.bin", utils::FileUtil::Compress(std::string(4096, 'A'), bundle::LZIP)}};
+    for (const auto &file : files)
+    {
+        SCOPED_TRACE(file.first);
+        const auto uploaded = http.post("/upload", {{"FileName", base64_encode(file.first)}, {"StorageType", "uncompressed"}}, file.second);
+        ASSERT_EQ(uploaded.m_code, 201);
+        const auto url = utils::JsonUtil::UnSerialize(uploaded.m_body)["url"].asString();
+        const auto info = Access::data(service).getFileMetaDataByRequestPath("/download/" + file.first);
+        const auto metadata = utils::FileUtil(m_metadataFile).getContent();
+        const auto response = http.get(url);
+
+        ASSERT_EQ(response.m_code, HTTP_OK);
+        EXPECT_EQ(response.m_body, file.second);
+        EXPECT_EQ(response.m_contentType, "application/octet-stream");
+        EXPECT_EQ(response.m_contentLength, std::to_string(file.second.size()));
+        EXPECT_EQ(response.m_contentDisposition, "attachment; filename*=UTF-8''" + utils::fileNameEncode(file.first));
+        EXPECT_EQ(response.m_etag, Access::etag(info));
+        EXPECT_EQ(utils::FileUtil(info.m_absoluteFilePath).getContent(), file.second);
+        EXPECT_EQ(utils::FileUtil(m_metadataFile).getContent(), metadata);
+    }
+    EXPECT_EQ(Access::data(service).getAll().size(), files.size());
+}
+
+TEST_F(ServiceHttpTests, DownloadsCompressedUploadsWithoutTemporaryFiles)
+{
+    server::Service service;
+    LocalHttpServer http(service);
+    const auto ordinaryDirectory = server::Config::GetInstance().getUncompressedFilesDirPath();
+    const std::vector<std::pair<std::string, std::string>> files{
+        {u8"压缩 +.txt", std::string(32768, 'A')},
+        {"binary.bin", std::string("a\0\xffz", 4)},
+        {"empty.txt", ""}};
+    for (const auto &file : files)
+    {
+        SCOPED_TRACE(file.first);
+        const auto uploaded = http.post("/upload", {{"FileName", base64_encode(file.first)}, {"StorageType", "compressed"}}, file.second);
+        ASSERT_EQ(uploaded.m_code, 201);
+        const auto url = utils::JsonUtil::UnSerialize(uploaded.m_body)["url"].asString();
+        const auto info = Access::data(service).getFileMetaDataByRequestPath("/download/" + file.first);
+        const auto stored = utils::FileUtil(info.m_absoluteFilePath).getContent();
+        const auto metadata = utils::FileUtil(m_metadataFile).getContent();
+        const auto response = http.get(url);
+
+        ASSERT_EQ(response.m_code, HTTP_OK);
+        EXPECT_EQ(response.m_body, file.second);
+        EXPECT_EQ(response.m_contentLength, std::to_string(file.second.size()));
+        EXPECT_EQ(response.m_contentType, "application/octet-stream");
+        EXPECT_EQ(response.m_etag, Access::etag(info));
+        EXPECT_EQ(utils::FileUtil(info.m_absoluteFilePath).getContent(), stored);
+        EXPECT_EQ(utils::FileUtil(m_metadataFile).getContent(), metadata);
+        EXPECT_FALSE(fs::exists(ordinaryDirectory));
+    }
+
+    // 普通目录中即使已有同名文件，也不能被压缩下载覆盖或删除。
+    fs::create_directories(ordinaryDirectory);
+    const auto existing = ordinaryDirectory / files.front().first;
+    utils::FileUtil(existing).setContent("keep");
+    const auto response = http.get(utils::urlEncode("/download/" + files.front().first));
+    EXPECT_EQ(response.m_code, HTTP_OK);
+    EXPECT_EQ(response.m_body, files.front().second);
+    EXPECT_EQ(utils::FileUtil(existing).getContent(), "keep");
+}
+
+TEST_F(ServiceHttpTests, DownloadsUsingConfiguredPrefixAndDecodesTheOriginalPathOnce)
+{
+    m_config["download_prefix"] = "/files/";
+    applyConfig();
+    server::Service service;
+    LocalHttpServer http(service);
+    const std::string name = u8"中文 +%2F.txt";
+    const auto uploaded = http.post("/upload", {{"FileName", base64_encode(name)}, {"StorageType", "uncompressed"}}, "original");
+    ASSERT_EQ(uploaded.m_code, 201);
+    const auto url = utils::JsonUtil::UnSerialize(uploaded.m_body)["url"].asString();
+    const auto response = http.get(url + "?token=123&next=/download/missing.txt");
+    EXPECT_EQ(response.m_code, HTTP_OK);
+    EXPECT_EQ(response.m_body, "original");
+    EXPECT_EQ(response.m_contentDisposition, "attachment; filename*=UTF-8''" + utils::fileNameEncode(name));
+    EXPECT_EQ(http.get(utils::urlEncode("/download/" + name)).m_code, HTTP_NOTFOUND);
+}
+
+TEST_F(ServiceHttpTests, DownloadsUsingTheFilePathRecordedInMetadata)
+{
+    server::Service service;
+    LocalHttpServer http(service);
+    const auto directory = server::Config::GetInstance().getUncompressedFilesDirPath();
+    fs::create_directories(directory);
+    const auto path = directory / "stored.bin";
+    const std::string content("a\0\xffz", 4);
+    utils::FileUtil(path).setContent(content);
+    auto info = server::FileMetadata::FromFile(path);
+    info.m_url = "/download/alias.bin";
+    Access::data(service).insert(info);
+
+    const auto response = http.get(info.m_url);
+    EXPECT_EQ(response.m_code, HTTP_OK);
+    EXPECT_EQ(response.m_body, content);
+    EXPECT_EQ(response.m_contentDisposition, "attachment; filename*=UTF-8''stored.bin");
+    EXPECT_EQ(http.get("/download/stored.bin").m_code, HTTP_NOTFOUND);
+}
+
+TEST_F(ServiceHttpTests, DownloadsAfterRecreatingTheServiceFromPersistedMetadata)
+{
+    const std::vector<std::pair<std::string, std::string>> files{
+        {"persisted.bin", std::string("a\0\xffz", 4)},
+        {u8"持久化 压缩.bin", std::string(32768, 'A') + std::string("\0\xff", 2)}};
+    std::vector<std::string> urls;
+    std::vector<server::FileMetadata> records;
+    {
+        server::Service service;
+        LocalHttpServer http(service);
+        for (size_t i = 0; i < files.size(); ++i)
+        {
+            SCOPED_TRACE(files[i].first);
+            const auto type = i == 0 ? "uncompressed" : "compressed";
+            const auto uploaded = http.post("/upload", {{"FileName", base64_encode(files[i].first)}, {"StorageType", type}}, files[i].second);
+            ASSERT_EQ(uploaded.m_code, 201);
+            urls.push_back(utils::JsonUtil::UnSerialize(uploaded.m_body)["url"].asString());
+            records.push_back(Access::data(service).getFileMetaDataByRequestPath("/download/" + files[i].first));
+        }
+    }
+
+    // 原 Service 及其内存表已销毁，新实例必须从磁盘元数据恢复普通和压缩文件的下载信息。
+    const auto metadata = utils::FileUtil(m_metadataFile).getContent();
+    server::Service restored;
+    LocalHttpServer http(restored);
+    ASSERT_EQ(Access::data(restored).getAll().size(), files.size());
+    for (size_t i = 0; i < files.size(); ++i)
+    {
+        SCOPED_TRACE(files[i].first);
+        const auto response = http.get(urls[i]);
+        ASSERT_EQ(response.m_code, HTTP_OK);
+        EXPECT_EQ(response.m_body, files[i].second);
+        EXPECT_EQ(response.m_contentLength, std::to_string(files[i].second.size()));
+        EXPECT_EQ(response.m_contentDisposition, "attachment; filename*=UTF-8''" + utils::fileNameEncode(files[i].first));
+        EXPECT_EQ(response.m_etag, Access::etag(records[i]));
+        EXPECT_EQ(Access::data(restored).getFileMetaDataByRequestPath(records[i].m_url).m_absoluteFilePath, records[i].m_absoluteFilePath);
+    }
+    EXPECT_EQ(utils::FileUtil(m_metadataFile).getContent(), metadata);
+}
+
 TEST_F(ServiceRoutingTests, IgnoresQueryParametersWhenSelectingTheRootHandler)
 {
     server::Service service;
