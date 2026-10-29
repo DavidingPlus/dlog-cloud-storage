@@ -52,16 +52,12 @@ namespace service_test
         static std::string formatFileSize(uint64_t size);
         static std::string fileListHtml(const std::vector<server::FileMetadata> &files);
         static std::string etag(const server::FileMetadata &info);
-        static void dispatch(evhttp_request *req, server::Service &service);
-        static void showFileList(evhttp_request *req, server::Service &service);
         static Callback callback();
         static const std::string &ip(const server::Service &service);
         static int port(const server::Service &service);
         static const std::string &prefix(const server::Service &service);
         static server::DataManager &data(server::Service &service);
     };
-
-    RequestPtr MakeRequest(const std::string &uri = "/");
 
     // 修改进程时区后自动恢复；时区用例顺序执行，并发格式化期间不再修改 TZ。
     class ScopedTimezone

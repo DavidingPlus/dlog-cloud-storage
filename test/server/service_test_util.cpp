@@ -1,7 +1,5 @@
 #include "service_test_util.h"
 
-#include <event2/http_struct.h>
-
 
 namespace service_test
 {
@@ -13,10 +11,6 @@ namespace service_test
 
     std::string Access::etag(const server::FileMetadata &info) { return server::Service::GetETag(info); }
 
-    void Access::dispatch(evhttp_request *req, server::Service &service) { server::Service::GenericCallback(req, &service); }
-
-    void Access::showFileList(evhttp_request *req, server::Service &service) { server::Service::ShowFileList(req, &service); }
-
     Access::Callback Access::callback() { return &server::Service::GenericCallback; }
 
     const std::string &Access::ip(const server::Service &service) { return service.m_serverIp; }
@@ -26,16 +20,6 @@ namespace service_test
     const std::string &Access::prefix(const server::Service &service) { return service.m_downloadPrefix; }
 
     server::DataManager &Access::data(server::Service &service) { return service.m_dataManager; }
-
-    RequestPtr MakeRequest(const std::string &uri)
-    {
-        RequestPtr request(evhttp_request_new(nullptr, nullptr), evhttp_request_free);
-        if (!request) throw std::runtime_error("test request allocation failed");
-        // 按 libevent 服务端的宽松 URI 规则构造真实请求对象，用于直接验证回调抛出的异常。
-        request->uri_elems = evhttp_uri_parse_with_flags(uri.data(), EVHTTP_URI_NONCONFORMANT);
-        if (!request->uri_elems) throw std::runtime_error("test URI parsing failed");
-        return request;
-    }
 
     ScopedTimezone::ScopedTimezone(const char *zone)
     {

@@ -78,33 +78,59 @@ void Service::run()
     if (-1 == event_base_dispatch(base.get())) throw std::runtime_error("Service::run(): event_base_dispatch() failed");
 }
 
-void Service::GenericCallback(evhttp_request *req, void *arg)
+void Service::GenericCallback(evhttp_request *req, void *arg) noexcept
 {
-    // evhttp_request_get_evhttp_uri() 取出 req 中已解析的 URI 对象；evhttp_uri_get_path() 读取路径，不含查询参数 query。路径中的 %HH 由 urlDecode() 还原，具体见 docs/libevent-request-uri.md。
-    std::string requestPath = utils::urlDecode(evhttp_uri_get_path(evhttp_request_get_evhttp_uri(req)));
+    try
+    {
+        // evhttp_request_get_evhttp_uri() 取出已解析的 URI；path 不含查询参数。先判空，再构造字符串，具体见 docs/libevent-request-uri.md。
+        auto uri = evhttp_request_get_evhttp_uri(req);
+        const char *rawPath = uri ? evhttp_uri_get_path(uri) : nullptr;
+        if (!rawPath)
+        {
+            evhttp_send_reply(req, HTTP_BADREQUEST, "Invalid request URI", nullptr);
+            return;
+        }
 
-    // run() 注册回调时传入 this 指针。
-    Service *service = static_cast<Service *>(arg);
+        // 只将路径解码的参数异常归为 400；业务处理抛出的异常由外层统一返回 500。
+        std::string requestPath;
+        try
+        {
+            requestPath = utils::urlDecode(rawPath);
+        }
+        catch (const std::invalid_argument &)
+        {
+            evhttp_send_reply(req, HTTP_BADREQUEST, "Invalid URL encoding", nullptr);
+            return;
+        }
 
-    // 下载请求。
-    if (std::string::npos != requestPath.find(service->m_downloadPrefix))
-    {
-        Download(req, arg);
+        // run() 注册回调时传入 this 指针。
+        Service *service = static_cast<Service *>(arg);
+
+        // 下载请求。
+        if (std::string::npos != requestPath.find(service->m_downloadPrefix))
+        {
+            Download(req, arg);
+        }
+        // 上传请求。
+        else if ("/upload" == requestPath)
+        {
+            Upload(req, arg);
+        }
+        // 显示已存储文件列表，返回一个 HTML 页面给浏览器。
+        else if ("/" == requestPath)
+        {
+            ShowFileList(req, arg);
+        }
+        // 404。
+        else
+        {
+            evhttp_send_reply(req, HTTP_NOTFOUND, "Not Found", nullptr);
+        }
     }
-    // 上传请求。
-    else if ("/upload" == requestPath)
+    catch (...)
     {
-        Upload(req, arg);
-    }
-    // 显示已存储文件列表，返回一个 HTML 页面给浏览器。
-    else if ("/" == requestPath)
-    {
-        ShowFileList(req, arg);
-    }
-    // 404。
-    else
-    {
-        evhttp_send_reply(req, HTTP_NOTFOUND, "Not Found", nullptr);
+        // TODO 接入日志后记录原始异常；响应只返回通用错误，不暴露内部文件路径等细节。
+        evhttp_send_reply(req, HTTP_INTERNAL, "Internal Server Error", nullptr);
     }
 }
 
@@ -346,7 +372,7 @@ void Service::Download(evhttp_request *req, void *arg)
     {
         // 2. 从请求的原始编码路径解码得到 requestPath，查询参数不参与查找；加号仍表示加号。
         // GenericCallback 的解码结果是其局部变量，这里重新读取原始 URI，避免对已解码的结果再次解码。
-        // TODO 后续统一复用路由解析的路径，并完善路由前缀匹配和 URI 错误处理。
+        // TODO 后续统一复用路由解析的路径，并完善路由前缀匹配。
         auto requestPath = utils::urlDecode(evhttp_uri_get_path(evhttp_request_get_evhttp_uri(req)));
 
         // 3. 元数据提供实际文件位置，不能直接把客户端请求路径当成磁盘路径。

@@ -88,10 +88,27 @@ std::string requestPath = utils::urlDecode(rawPath);
 
 ## 当前 GenericCallback 为什么这样读取
 
-当前实现把“取 URI 对象、取路径、解码路径”合并在一行中：
+当前实现分步读取 URI 和路径，先检查指针，再解码路径：
 
 ```cpp
-std::string requestPath = utils::urlDecode(evhttp_uri_get_path(evhttp_request_get_evhttp_uri(req)));
+const auto *uri = evhttp_request_get_evhttp_uri(req);
+const char *rawPath = uri ? evhttp_uri_get_path(uri) : nullptr;
+if (!rawPath)
+{
+    evhttp_send_reply(req, HTTP_BADREQUEST, "Invalid request URI", nullptr);
+    return;
+}
+
+std::string requestPath;
+try
+{
+    requestPath = utils::urlDecode(rawPath);
+}
+catch (const std::invalid_argument &)
+{
+    evhttp_send_reply(req, HTTP_BADREQUEST, "Invalid URL encoding", nullptr);
+    return;
+}
 ```
 
 对于上述请求，三个步骤依次得到：
@@ -101,5 +118,7 @@ std::string requestPath = utils::urlDecode(evhttp_uri_get_path(evhttp_request_ge
 3. 解码后的路径 `/download/a b.txt`。
 
 回调按路径判断下载、上传或首页处理。查询参数 `token=123` 不参与当前路由匹配，完整的 `req` 和上下文 `arg` 会继续传给对应业务处理函数。
+
+上述步骤和业务分发均位于通用回调最外层的 `try` 内。路径解码的参数错误返回 400；模板读取等未处理的业务异常由外层 `catch (...)` 统一返回 500，不把内部异常消息发送给客户端。`GenericCallback()` 声明为 `noexcept`，异常不会传播出 libevent 事件循环，失败请求之后仍可处理后续请求。
 
 代码命名约定：`requestPath` 表示解码后的 HTTP 请求路径，用于路由及 `getFileMetaDataByRequestPath()` 查询；`filePath` 表示元数据记录的磁盘文件路径，用于文件读写及 `getFileMetaDataByFilePath()` 查询。

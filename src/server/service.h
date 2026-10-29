@@ -39,8 +39,8 @@ public:
 
 private:
 
-    // libevent 通用请求回调，解析并解码请求路径，按参考流程分发请求。
-    static void GenericCallback(evhttp_request *req, void *arg);
+    // libevent 通用请求回调，解析并解码请求路径后分发请求。URI/路径缺失或百分号编码非法返回 400，未处理的业务异常返回 500，不允许异常逸出事件循环。
+    static void GenericCallback(evhttp_request *req, void *arg) noexcept;
 
     // 上传处理：解码 FileName，按 StorageType 直接保存或压缩后保存，并持久化元数据，成功返回 201 和 JSON。允许上传零字节文件：正文长度为 0 时跳过字节复制，仍创建空文件并保存元数据，不视为错误。文件创建、写入或元数据保存失败时返回 500，并尝试清理本次上传文件。
     static void Upload(evhttp_request *req, void *arg);

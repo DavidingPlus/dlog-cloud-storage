@@ -489,32 +489,51 @@ TEST_F(ServiceHttpTests, RendersTheRealApplicationTemplate)
     EXPECT_EQ(response.m_body.find("{{BACKEND_URL}}"), std::string::npos);
 }
 
-TEST_F(ServiceHttpTests, PropagatesMissingTemplateErrorsBeforeSendingAReply)
+TEST_F(ServiceHttpTests, Returns500ForMissingTemplateAndRecovers)
 {
     server::Service service;
-    auto request = MakeRequest();
+    LocalHttpServer http(service);
     fs::remove(m_templateFile);
-    EXPECT_THROW(Access::showFileList(request.get(), service), fs::filesystem_error);
-    EXPECT_EQ(evbuffer_get_length(evhttp_request_get_output_buffer(request.get())), 0U);
+    const auto failed = http.get("/");
+    EXPECT_EQ(failed.m_code, HTTP_INTERNAL);
+    EXPECT_TRUE(failed.m_body.empty());
+    EXPECT_EQ(http.get("/missing").m_code, HTTP_NOTFOUND);
+
+    writeTemplate("<p>recovered</p>");
+    const auto recovered = http.get("/");
+    EXPECT_EQ(recovered.m_code, HTTP_OK);
+    EXPECT_EQ(recovered.m_body, "<p>recovered</p>");
 }
 
-TEST_F(ServiceHttpTests, RejectsADirectoryAtTheTemplatePath)
+TEST_F(ServiceHttpTests, Returns500ForDirectoryAtTheTemplatePathAndRecovers)
 {
     server::Service service;
-    auto request = MakeRequest();
+    LocalHttpServer http(service);
     fs::remove(m_templateFile);
     fs::create_directory(m_templateFile);
-    EXPECT_THROW(Access::showFileList(request.get(), service), fs::filesystem_error);
+    EXPECT_EQ(http.get("/").m_code, HTTP_INTERNAL);
+    EXPECT_EQ(http.get("/missing").m_code, HTTP_NOTFOUND);
+
+    fs::remove(m_templateFile);
+    writeTemplate("<p>recovered</p>");
+    const auto recovered = http.get("/");
+    EXPECT_EQ(recovered.m_code, HTTP_OK);
+    EXPECT_EQ(recovered.m_body, "<p>recovered</p>");
 }
 
-TEST_F(ServiceHttpTests, PropagatesUnreadableTemplateErrors)
+TEST_F(ServiceHttpTests, Returns500ForUnreadableTemplateAndRecovers)
 {
     server::Service service;
-    auto request = MakeRequest();
+    LocalHttpServer http(service);
+    const auto permissions = fs::status(m_templateFile).permissions();
     fs::permissions(m_templateFile, fs::perms::none);
     std::ifstream probe(m_templateFile);
     if (probe.is_open()) GTEST_SKIP() << "The current user can read files without read permission";
-    EXPECT_THROW(Access::showFileList(request.get(), service), std::ios_base::failure);
+    EXPECT_EQ(http.get("/").m_code, HTTP_INTERNAL);
+    EXPECT_EQ(http.get("/missing").m_code, HTTP_NOTFOUND);
+
+    fs::permissions(m_templateFile, permissions);
+    EXPECT_EQ(http.get("/").m_code, HTTP_OK);
 }
 
 // 以下两个回归用例验证文件名按字面显示，不应成为模板替换指令。
@@ -1114,15 +1133,17 @@ TEST_F(ServiceRoutingTests, Returns404ForUnknownAndCaseSensitivePaths)
     }
 }
 
-TEST_F(ServiceRoutingTests, PropagatesInvalidPercentEncodingBeforeReplying)
+TEST_F(ServiceRoutingTests, Returns400ForInvalidPercentEncodingAndContinuesServingRequests)
 {
     server::Service service;
-    for (const char *path : {"/bad%", "/bad%Q1", "/bad%1Q"})
+    LocalHttpServer http(service);
+    for (const char *path : {"/bad%", "/bad%Q1", "/bad%1Q", "/download/bad%", "/upload%Q1"})
     {
         SCOPED_TRACE(path);
-        auto request = MakeRequest(path);
-        EXPECT_THROW(Access::dispatch(request.get(), service), std::invalid_argument);
-        EXPECT_EQ(evbuffer_get_length(evhttp_request_get_output_buffer(request.get())), 0U);
+        const auto response = http.get(path);
+        EXPECT_EQ(response.m_code, HTTP_BADREQUEST);
+        EXPECT_TRUE(response.m_body.empty());
+        EXPECT_EQ(http.get("/").m_code, HTTP_OK);
     }
 }
 
