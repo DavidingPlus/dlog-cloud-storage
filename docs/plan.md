@@ -69,7 +69,7 @@ flowchart LR
 | `src/server/config.h/.cpp` | 已实现服务地址、端口、下载前缀、文件目录、元数据路径和压缩格式配置 |
 | `src/utils/fileutil.h/.cpp`、`src/utils/common.h/.cpp` | 已实现路径定位、二进制读写、目录操作、压缩解压、URL 编解码与 HTML 文本转义；文件名校验等按需补充 |
 | `src/server/datamanager.h/.cpp` | 已实现 `FileMetadata`、内存查询、JSON 持久化和启动恢复 |
-| `src/server/service.h/.cpp` | 已实现 HTTP 监听、路由、列表页面和两种上传策略，上传参数解析为存储类型枚举；下载处理待实现 |
+| `src/server/service.h/.cpp` | 已实现 HTTP 监听、路由、列表页面、两种上传策略及完整文件下载；上传参数和下载策略使用存储类型枚举 |
 | `src/server/web/template.html` | 服务端页面模板，包含文件选择、上传、列表和下载链接 |
 | `src/server/config/server.conf` | 服务端 JSON 运行配置，区别于 XMake 生成的编译配置头文件 |
 
@@ -84,7 +84,7 @@ flowchart LR
 | `m_absoluteFilePath` | `absolute_file_path` | 服务端生成的文件绝对路径 |
 | `m_url` | `url` | 下载前缀加原始文件名，作为内存表的唯一键 |
 
-内部 `m_url` 保存未经过 URL 百分号编码的资源路径；生成供浏览器访问的下载链接时再编码，接收下载请求时按路径规则解码一次。列表中的文件名从存储路径提取，存储类型根据文件所属目录与配置目录的对应关系判断，不按路径中的 `low`、`deep` 等子串推断。
+内部 `m_url` 保存未经过 URL 百分号编码的资源路径；生成供浏览器访问的下载链接时再编码，接收下载请求时按路径规则解码一次。`getFileMetaDataByRequestPath(requestPath)` 按这种已解码的 HTTP 请求路径查询元数据，`getFileMetaDataByFilePath(filePath)` 按磁盘文件路径查询；两者分别对应网络请求中的资源位置和文件系统中的存储位置。列表中的文件名从存储路径提取，存储类型根据文件所属目录与配置目录的对应关系判断，不按路径中的 `low`、`deep` 等子串推断。
 
 压缩文件的 `m_fileSize` 表示压缩处理后的磁盘文件大小，页面显示为“存储大小”。若后续需要展示原始大小，再扩展元数据并处理旧 JSON 的加载兼容。`m_mtime` 使用 `std::filesystem::file_time_type`，展示为日历时间前需要转换时钟，不能直接当作 `time_t` 传给 `std::ctime()`。
 
@@ -198,13 +198,13 @@ enum class StorageType
 | `static GetETag(const FileMetadata &)` | 根据元数据生成 ETag |
 | `static Download(evhttp_request *, void *)` | 按请求路径查找元数据，读取或解压后返回原始字节 |
 
-请求处理函数统一保留参考实现的 `(evhttp_request *, void *)` 参数，不预先拆分实例分发函数或注入 `DataManager`。`run()` 已实现事件循环和 HTTP 服务创建、配置地址与端口监听，以及通用回调注册；注册 `GenericCallback` 时以 `this` 作为上下文。资源以智能指针管理，按 HTTP 服务、事件循环的顺序自动释放；正常结束直接返回，创建事件循环或 HTTP 服务、绑定监听、运行事件循环失败时抛出 `std::runtime_error`。暂不添加信号处理，停止流程后续再补充。文件时间、文件大小、列表 HTML 和 ETag 辅助函数已实现；`GenericCallback()` 已实现请求分发，`ShowFileList()` 已实现页面响应，`Upload()` 已实现直接保存和压缩保存的基础流程，`Download()` 仍为空实现；断点下载仍按第 7 节后续实施。
+请求处理函数统一保留参考实现的 `(evhttp_request *, void *)` 参数，不预先拆分实例分发函数或注入 `DataManager`。`run()` 已实现事件循环和 HTTP 服务创建、配置地址与端口监听，以及通用回调注册；注册 `GenericCallback` 时以 `this` 作为上下文。资源以智能指针管理，按 HTTP 服务、事件循环的顺序自动释放；正常结束直接返回，创建事件循环或 HTTP 服务、绑定监听、运行事件循环失败时抛出 `std::runtime_error`。暂不添加信号处理，停止流程后续再补充。文件时间、文件大小、列表 HTML 和 ETag 辅助函数已实现；`GenericCallback()` 已实现请求分发，`ShowFileList()` 已实现页面响应，`Upload()` 已实现直接保存和压缩保存的基础流程，`Download()` 已实现普通文件读取和压缩文件内存解压，返回完整原始内容及 ETag；断点下载仍按第 7 节后续实施。
 
 本节骨架先沿用参考实现的 `ShowFileList()` 页面生成职责；上方协议和第 6 节中的独立 `/files` 接口作为原计划保留，后续确定是否拆分时再统一调整。
 
 `Service` 通过对象成员 `DataManager m_dataManager` 拥有元数据管理器，其生命周期随服务对象管理，构造时加载持久化文件。`ShowFileList()` 通过回调参数 `arg` 取回当前 `Service`，调用 `m_dataManager.getAll()`，读取可执行文件旁的 `web/template.html`，用 `std::regex_replace()` 替换 `{{FILE_LIST}}` 和 `{{BACKEND_URL}}`，最后写入请求的输出缓冲区，以 `text/html;charset=utf-8` 返回 HTTP 200。后端地址由配置中的 IP 和端口拼接。
 
-`GenericCallback()` 当前按参考流程提取 URI 路径并进行 URL 解码，再依次判断：路径中包含配置下载前缀时调用 `Download()`，路径等于 `/upload` 时调用 `Upload()`，路径等于 `/` 时调用 `ShowFileList()`，其余返回 404。`Upload()` 已校验 POST；其他请求方法校验、统一回调异常处理和独立 `/files` 接口后续再补充。下载接入时再统一路径传递，避免对已解码的字符串重复解码。
+`GenericCallback()` 当前按参考流程提取 URI 路径并进行 URL 解码，再依次判断：路径中包含配置下载前缀时调用 `Download()`，路径等于 `/upload` 时调用 `Upload()`，路径等于 `/` 时调用 `ShowFileList()`，其余返回 404。`Upload()` 已校验 POST，`Download()` 已校验 GET；其他方法、统一回调异常处理和独立 `/files` 接口后续再补充。下载从请求的原始编码路径重新取值并解码，不对 GenericCallback 的解码结果再次解码；路径解析复用及路由前缀匹配优化留 TODO。
 
 启动阶段按“配置与日志 → 数据目录及缺失的元数据文件初始化 → 构造 `Service`（同时构造并加载成员 `DataManager`）→ `Service::run()`”组织。元数据文件必须在构造 `Service` 前准备好，缺失或加载失败会使构造抛出异常；当前 `main()` 尚未接入此启动流程。回调异常处理和服务停止流程后续再补齐，当前不额外增加类接口；退出后按第 4 节关闭日志。
 
@@ -242,7 +242,7 @@ TODO：后续补充 SIGINT/SIGTERM 的正常停止流程，包括停止接收新
 
 #### 第 4 步：元数据与本地存储闭环
 
-1. 复用 `FileMetadata` 和 `DataManager` 的按 URL 查询、按文件路径查询和列表查询。
+1. 复用 `FileMetadata` 和 `DataManager` 的按请求路径查询、按磁盘文件路径查询和列表查询。
 2. 复用 JSON 加载和保存；启动准备阶段创建存储目录及元数据父目录，仅在元数据文件缺失时写入 `[]`，然后构造 `DataManager`。已有文件读取或解析失败时报告错误。
 3. 在本地调用中跑通“保存普通文件 → 持久化元数据 → 查询 → 读取文件”。
 4. 上传成功的条件是文件保存和元数据保存都成功；元数据保存失败时，不发布成功条目，清理本次新建文件。
@@ -268,12 +268,23 @@ TODO：后续补充 SIGINT/SIGTERM 的正常停止流程，包括停止接收新
 
 #### 第 6 步：列表与下载
 
+当前 `Download()` 沿用参考的“解析路径 → 查元数据 → 读取或解压 → 设置响应头 → 返回内容”顺序，函数开头和各代码块已补流程注释。仅接受 GET，记录或文件不存在返回 404，存储目录无法识别或读取/解压抛出异常返回 500。零字节文件返回 200 和空正文；文件名中的中文、空格、加号和字面的 `%2F` 均按原始 URL 解码一次查找。
+
+对照[参考 Download 实现](https://github.com/youngyangyang04/Kama-AsynLogSystem-CloudStorage/blob/main/src/server/Service.hpp)，基础版本调整以下问题：
+
+- 参考未检查元数据查询是否成功；当前查询失败立即返回 404。
+- 参考按路径子串判断存储类型；当前按标准化后的实际父目录判断 StorageType。
+- 参考把解压结果写入普通存储目录，可能覆盖或删除同名文件；当前仅在内存中解压。
+- 参考部分错误响应后没有立即返回，且仅凭 If-Range 就返回 206、未截取 Range；当前错误响应后立即返回，成功统一返回完整 200，也不声明 Accept-Ranges: bytes。
+
+HEAD、路由解析复用、外部文件变化时的元数据同步、日志、缓存条件请求、Range、流式传输、大小限制和压缩数据损坏检测均留 TODO。以下独立 `/files` 接口及完整验收要求继续作为后续计划保留。
+
 1. `GET /files` 返回文件列表 JSON，包含名称、存储大小、存储类型和下载 URL，存储类型统一返回 `uncompressed` 或 `compressed`。
 2. `GET /download/<编码后的文件名>` 根据元数据定位文件，并返回原始二进制内容。
 3. 路径中的名称按 URL 路径规则解码一次，正确保留加号；使用服务端记录的路径查找文件。
 4. 设置合适的响应类型和下载文件名；文件不存在时返回 404。
 
-第一版针对受大小限制的文件，可以先读入内存再返回完整内容，状态为 200。压缩文件根据所属目录判断策略，在内存中解压后返回。流式传输和 Range 下载在后续实施。
+当前先将文件完整读入内存，压缩文件按实际所属目录判断策略，在内存中解压后返回原始字节，状态为 200。响应设置 `application/octet-stream`、带 UTF-8 百分号编码文件名的 `Content-Disposition` 和 ETag，由 libevent 根据实际响应正文生成 Content-Length。下载不创建解压临时文件，不修改数据文件或元数据。读取和解压后的大小限制、流式传输、缓存条件处理和 Range 下载均留 TODO。
 
 验收：下载内容与上传内容逐字节一致；中文、空格、加号文件名的链接可用；未知文件返回 404。
 
@@ -316,7 +327,7 @@ rtk xmake test -y tests/server
 
 ### 6.2 第二阶段：压缩存储
 
-压缩上传已接入，使用配置的算法压缩后保存，并按磁盘实际大小记录元数据；测试覆盖可压缩文本、二进制和空文件，以及两种策略之间的同名保护。下载解压仍待接入，以下其余整体验收后续补齐。
+压缩上传已接入，使用配置的算法压缩后保存，并按磁盘实际大小记录元数据；测试覆盖可压缩文本、二进制和空文件，以及两种策略之间的同名保护。下载已接入内存解压，两种策略的原始字节往返测试通过；压缩数据损坏检测、大小限制及其他整体验收后续补齐。
 
 1. 复用已接入的 bundle 和压缩往返测试，核对配置中的 `bundle_format`；沿用参考项目时采用 LZIP 格式。
 2. 复用 `FileUtil::Compress()`、`FileUtil::UnCompress()` 和已有的压缩文件目录配置。
@@ -386,9 +397,9 @@ dlog 的 `DLOG_FATAL()` 在输出后调用刷新回调，再终止进程；默�
 
 当前仓库采用“通用工具静态库 + Linux 服务端静态库 + 服务端可执行程序 + 单元测试”的 XMake 应用工程，服务端主目标为 `dlog-cloud-storage-server`。已有 Linux 安装与打包流程，通用工具、服务端配置和元数据管理已有实现与单元测试。
 
-当前包依赖包括 bundle、JsonCpp 和 cpp-base64；`src/server/main.cpp` 目前只读取并输出配置。`Service`、浏览器页面和应用侧 dlog 接入仍待实现，尚未完成真实 HTTP 上传下载和集成运行验收。
+当前包依赖包括 libevent、bundle、JsonCpp 和 cpp-base64。`Service` 已具备上传、列表页面和完整文件下载，两种存储策略通过真实 HTTP 测试；`src/server/main.cpp` 目前仍只读取并输出配置，应用启动流程、dlog 接入及浏览器整体验收待完成。
 
 2026-10-22 确认上传采用自定义请求头协议：`FileName` 传递 UTF-8 文件名的 Base64 编码，`StorageType` 使用 `uncompressed`、`compressed`。本次同步整理 Service 的职责、上传和下载流程、页面上传方式及验收要求，并校正现有目录、构建目标和基础模块状态；HTTP 功能仍属于待实施内容。
 
-下一步先按第 6.1 节第 2 步运行最小 HTTP 服务，完成监听、固定响应、路由和停止流程，再逐步接入上传、列表、下载与浏览器页面。基础配置和工具沿用现有实现；在上传整体验收前补齐首次启动初始化、元数据持久化失败处理及应用侧 dlog 接入。第 8 步通过作为未压缩存储版本完成的标准。
+下一步将已有 Service 接入应用启动入口，补齐首次启动的数据目录和元数据文件初始化、应用侧 dlog 接入及停止流程，再验证浏览器上传、列表、下载和重启恢复。元数据持久化失败回滚已实现；大小限制、完整文件名校验、缓存验证、Range 和压缩数据损坏检测继续按 TODO 后续实施。
 

@@ -72,7 +72,7 @@ If-Range: "v1"
 
 ## 本项目中的职责与生成规则
 
-`Service::GetETag(const FileMetadata &info)` 已实现标签生成，返回带双引号的 `"文件名-文件大小-修改时间"`。`Download()` 后续负责把它写入响应头、判断条件请求并发送相应内容。
+`Service::GetETag(const FileMetadata &info)` 已实现标签生成，返回带双引号的 `"文件名-文件大小-修改时间"`。`Download()` 已将标签写入响应头，并返回完整原始文件内容；If-None-Match 等缓存条件和 Range/If-Range 判断留 TODO。
 
 本项目确定沿用参考实现，以“文件名-文件大小-修改时间”生成自定义 ETag。在文件由本服务管理、内容更新会反映到文件大小或修改时间的约束下，按强 ETag 使用。生成时使用以下元数据：[参考 GetETag 实现](https://github.com/youngyangyang04/Kama-AsynLogSystem-CloudStorage/blob/main/src/server/Service.hpp)
 

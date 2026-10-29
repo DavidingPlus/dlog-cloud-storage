@@ -935,6 +935,104 @@ TEST_F(ServiceHttpTests, DownloadsAfterRecreatingTheServiceFromPersistedMetadata
     EXPECT_EQ(utils::FileUtil(m_metadataFile).getContent(), metadata);
 }
 
+TEST_F(ServiceHttpTests, DownloadsReturn404ForMissingRecordsAndMissingDataFiles)
+{
+    server::Service service;
+    LocalHttpServer http(service);
+    EXPECT_EQ(http.get("/download/missing.txt").m_code, HTTP_NOTFOUND);
+    for (const char *type : {"uncompressed", "compressed"})
+    {
+        SCOPED_TRACE(type);
+        const auto name = std::string(type) + ".txt";
+        ASSERT_EQ(http.post("/upload", {{"FileName", base64_encode(name)}, {"StorageType", type}}, "data").m_code, 201);
+        const auto info = Access::data(service).getFileMetaDataByRequestPath("/download/" + name);
+        const auto metadata = utils::FileUtil(m_metadataFile).getContent();
+        fs::remove(info.m_absoluteFilePath);
+
+        EXPECT_EQ(http.get(info.m_url).m_code, HTTP_NOTFOUND);
+        EXPECT_NO_THROW(Access::data(service).getFileMetaDataByRequestPath(info.m_url));
+        EXPECT_EQ(utils::FileUtil(m_metadataFile).getContent(), metadata);
+    }
+}
+
+TEST_F(ServiceHttpTests, DownloadsReturn500WhenTheStoredPathIsADirectory)
+{
+    server::Service service;
+    LocalHttpServer http(service);
+    const auto info = makeInfo("directory.txt");
+    fs::create_directories(info.m_absoluteFilePath);
+    Access::data(service).insert(info);
+    const auto metadata = utils::FileUtil(m_metadataFile).getContent();
+
+    EXPECT_EQ(http.get(info.m_url).m_code, HTTP_INTERNAL);
+    EXPECT_TRUE(fs::is_directory(info.m_absoluteFilePath));
+    EXPECT_EQ(utils::FileUtil(m_metadataFile).getContent(), metadata);
+}
+
+TEST_F(ServiceHttpTests, DownloadsReturn500ForUnreadableFilesAndCanRetry)
+{
+    server::Service service;
+    LocalHttpServer http(service);
+    const std::string content(32768, 'A');
+    for (const char *type : {"uncompressed", "compressed"})
+    {
+        SCOPED_TRACE(type);
+        const auto name = std::string(type) + ".bin";
+        ASSERT_EQ(http.post("/upload", {{"FileName", base64_encode(name)}, {"StorageType", type}}, content).m_code, 201);
+        const auto info = Access::data(service).getFileMetaDataByRequestPath("/download/" + name);
+        const auto metadata = utils::FileUtil(m_metadataFile).getContent();
+        const auto permissions = fs::status(info.m_absoluteFilePath).permissions();
+        fs::permissions(info.m_absoluteFilePath, fs::perms::none);
+        std::ifstream probe(info.m_absoluteFilePath, std::ios::binary);
+        if (probe.is_open())
+        {
+            probe.close();
+            fs::permissions(info.m_absoluteFilePath, permissions);
+            GTEST_SKIP() << "The current user can read files without read permission";
+        }
+
+        // 文件仍然存在，但读取失败应返回 500；失败不能删除文件或元数据。
+        const auto failed = http.get(info.m_url);
+        fs::permissions(info.m_absoluteFilePath, permissions);
+        EXPECT_EQ(failed.m_code, HTTP_INTERNAL);
+        EXPECT_EQ(utils::FileUtil(m_metadataFile).getContent(), metadata);
+        EXPECT_NO_THROW(Access::data(service).getFileMetaDataByRequestPath(info.m_url));
+
+        const auto retried = http.get(info.m_url);
+        EXPECT_EQ(retried.m_code, HTTP_OK);
+        EXPECT_EQ(retried.m_body, content);
+    }
+}
+
+TEST_F(ServiceHttpTests, RejectsNonGetDownloadRequests)
+{
+    server::Service service;
+    LocalHttpServer http(service);
+    EXPECT_EQ(http.post("/download/missing.txt", {}, "data").m_code, HTTP_BADMETHOD);
+    EXPECT_TRUE(Access::data(service).getAll().empty());
+}
+
+TEST_F(ServiceHttpTests, DownloadsCompleteFilesWhileRangeAndCacheConditionsAreDeferred)
+{
+    server::Service service;
+    LocalHttpServer http(service);
+    ASSERT_EQ(http.post("/upload", {{"FileName", "YS50eHQ="}, {"StorageType", "uncompressed"}}, "0123456789").m_code, 201);
+    const auto first = http.get("/download/a.txt");
+    ASSERT_EQ(first.m_code, HTTP_OK);
+    ASSERT_FALSE(first.m_etag.empty());
+
+    // Range 尚未实现时仍返回完整 200，不能像参考实现一样仅凭 If-Range 返回假的 206。
+    const auto range = http.get("/download/a.txt", {{"Range", "bytes=2-4"}, {"If-Range", first.m_etag}});
+    EXPECT_EQ(range.m_code, HTTP_OK);
+    EXPECT_EQ(range.m_body, "0123456789");
+    EXPECT_EQ(range.m_contentLength, "10");
+    EXPECT_TRUE(range.m_acceptRanges.empty());
+    // TODO: 接入缓存验证后，匹配 If-None-Match 的响应应改为 304，并更新此用例。
+    const auto cached = http.get("/download/a.txt", {{"If-None-Match", first.m_etag}});
+    EXPECT_EQ(cached.m_code, HTTP_OK);
+    EXPECT_EQ(cached.m_body, "0123456789");
+}
+
 TEST_F(ServiceRoutingTests, IgnoresQueryParametersWhenSelectingTheRootHandler)
 {
     server::Service service;
