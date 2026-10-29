@@ -581,7 +581,7 @@ TEST_F(ServiceHttpTests, RejectsInvalidUploadParametersBeforeCreatingFiles)
     server::Service service;
     LocalHttpServer http(service);
     EXPECT_EQ(http.get("/upload").m_code, HTTP_BADMETHOD);
-    for (const char *type : {"unknown", ""})
+    for (const char *type : {"unknown", "", "Compressed", "UNCOMPRESSED"})
         EXPECT_EQ(http.post("/upload", {{"FileName", "YS50eHQ="}, {"StorageType", type}}, "data").m_code, HTTP_BADREQUEST);
     for (const char *name : {"", "!m9v", "Z"})
         EXPECT_EQ(http.post("/upload", {{"FileName", name}, {"StorageType", "uncompressed"}}, "data").m_code, HTTP_BADREQUEST);
@@ -678,22 +678,71 @@ TEST_F(ServiceHttpTests, RejectsUploadConflictsAndPreservesExistingData)
     EXPECT_EQ(Access::data(service).getAll().size(), 1U);
 }
 
+TEST_F(ServiceHttpTests, RejectsUploadsAtExistingAndDanglingSymlinks)
+{
+    server::Service service;
+    LocalHttpServer http(service);
+    const auto directory = server::Config::GetInstance().getUncompressedFilesDirPath();
+    fs::create_directories(directory);
+    const auto target = m_directory / "original.txt";
+    const auto missingTarget = m_directory / "missing.txt";
+    utils::FileUtil(target).setContent("keep");
+    fs::create_symlink(target, directory / "linked.txt");
+    fs::create_symlink(missingTarget, directory / "dangling.txt");
+    const auto metadata = utils::FileUtil(m_metadataFile).getContent();
+
+    for (const std::string name : {"linked.txt", "dangling.txt"})
+    {
+        SCOPED_TRACE(name);
+        EXPECT_EQ(http.post("/upload", {{"FileName", base64_encode(name)}, {"StorageType", "uncompressed"}}, "replacement").m_code, 409);
+        EXPECT_TRUE(fs::is_symlink(directory / name));
+    }
+    EXPECT_EQ(utils::FileUtil(target).getContent(), "keep");
+    EXPECT_FALSE(fs::exists(missingTarget));
+    EXPECT_TRUE(Access::data(service).getAll().empty());
+    EXPECT_EQ(utils::FileUtil(m_metadataFile).getContent(), metadata);
+}
+
 TEST_F(ServiceHttpTests, RemovesTheUploadedFileWhenMetadataSavingFailsAndCanRetry)
 {
     server::Service service;
     LocalHttpServer http(service);
-    const auto metadata = utils::FileUtil(m_metadataFile).getContent();
+    const std::string existingName = "existing.txt";
+    ASSERT_EQ(http.post("/upload", {{"FileName", base64_encode(existingName)}, {"StorageType", "uncompressed"}}, "keep").m_code, 201);
+    const auto existingPath = server::Config::GetInstance().getUncompressedFilesDirPath() / existingName;
     auto temporary = m_metadataFile;
     temporary += ".tmp";
-    utils::FileUtil(temporary).setContent("occupied");
-    const std::vector<std::pair<std::string, std::string>> headers{{"FileName", "YS50eHQ="}, {"StorageType", "uncompressed"}};
-    EXPECT_EQ(http.post("/upload", headers, "data").m_code, HTTP_INTERNAL);
-    EXPECT_FALSE(fs::exists(server::Config::GetInstance().getUncompressedFilesDirPath() / "a.txt"));
-    EXPECT_TRUE(Access::data(service).getAll().empty());
-    EXPECT_EQ(utils::FileUtil(m_metadataFile).getContent(), metadata);
-    EXPECT_EQ(utils::FileUtil(temporary).getContent(), "occupied");
-    fs::remove(temporary);
-    EXPECT_EQ(http.post("/upload", headers, "retry").m_code, 201);
+
+    // 两种策略均验证“数据文件已写入，但元数据无法保存”时的清理、旧记录保护和重试。
+    for (const std::string storageType : {"uncompressed", "compressed"})
+    {
+        SCOPED_TRACE(storageType);
+        const auto metadata = utils::FileUtil(m_metadataFile).getContent();
+        const auto originalCount = Access::data(service).getAll().size();
+        const auto name = storageType + ".txt";
+        const auto url = "/download/" + name;
+        const auto directory = "compressed" == storageType ? server::Config::GetInstance().getCompressedFilesDirPath() : server::Config::GetInstance().getUncompressedFilesDirPath();
+        const auto path = directory / name;
+        const std::vector<std::pair<std::string, std::string>> headers{{"FileName", base64_encode(name)}, {"StorageType", storageType}};
+        utils::FileUtil(temporary).setContent("occupied");
+
+        EXPECT_EQ(http.post("/upload", headers, std::string(4096, 'A')).m_code, HTTP_INTERNAL);
+        EXPECT_FALSE(fs::exists(path));
+        EXPECT_EQ(Access::data(service).getAll().size(), originalCount);
+        EXPECT_THROW(Access::data(service).getFileMetaDataByUrl(url), std::out_of_range);
+        EXPECT_EQ(utils::FileUtil(m_metadataFile).getContent(), metadata);
+        EXPECT_EQ(utils::FileUtil(existingPath).getContent(), "keep");
+        EXPECT_EQ(utils::FileUtil(temporary).getContent(), "occupied");
+        server::DataManager restored;
+        EXPECT_EQ(restored.getAll().size(), originalCount);
+        EXPECT_THROW(restored.getFileMetaDataByUrl(url), std::out_of_range);
+
+        fs::remove(temporary);
+        ASSERT_EQ(http.post("/upload", headers, "retry").m_code, 201);
+        auto stored = utils::FileUtil(path).getContent();
+        if ("compressed" == storageType) stored = utils::FileUtil::UnCompress(stored);
+        EXPECT_EQ(stored, "retry");
+    }
 }
 
 TEST_F(ServiceHttpTests, Returns500WhenTheStorageDirectoryCannotBeCreated)
@@ -705,6 +754,35 @@ TEST_F(ServiceHttpTests, Returns500WhenTheStorageDirectoryCannotBeCreated)
     EXPECT_EQ(http.post("/upload", {{"FileName", "YS50eHQ="}, {"StorageType", "uncompressed"}}, "data").m_code, HTTP_INTERNAL);
     EXPECT_EQ(utils::FileUtil(directory).getContent(), "occupied");
     EXPECT_TRUE(Access::data(service).getAll().empty());
+}
+
+TEST_F(ServiceHttpTests, Returns500WhenTheUploadedFileCannotBeOpenedAndCanRetry)
+{
+    server::Service service;
+    LocalHttpServer http(service);
+    const auto directory = server::Config::GetInstance().getUncompressedFilesDirPath();
+    fs::create_directories(directory);
+    const auto metadata = utils::FileUtil(m_metadataFile).getContent();
+    fs::permissions(directory, fs::perms::owner_read | fs::perms::owner_exec);
+    std::ofstream probe(directory / "probe.txt");
+    if (probe.is_open())
+    {
+        probe.close();
+        fs::permissions(directory, fs::perms::owner_all);
+        GTEST_SKIP() << "The current user can write to a directory without write permission";
+    }
+
+    // 目录已经存在，createDirectory() 可以成功，随后 setContent() 打开新文件时失败。
+    const std::vector<std::pair<std::string, std::string>> headers{{"FileName", "YS50eHQ="}, {"StorageType", "uncompressed"}};
+    const auto response = http.post("/upload", headers, "data");
+    fs::permissions(directory, fs::perms::owner_all);
+    EXPECT_EQ(response.m_code, HTTP_INTERNAL);
+    EXPECT_FALSE(fs::exists(directory / "a.txt"));
+    EXPECT_TRUE(Access::data(service).getAll().empty());
+    EXPECT_EQ(utils::FileUtil(m_metadataFile).getContent(), metadata);
+
+    ASSERT_EQ(http.post("/upload", headers, "retry").m_code, 201);
+    EXPECT_EQ(utils::FileUtil(directory / "a.txt").getContent(), "retry");
 }
 
 TEST_F(ServiceRoutingTests, IgnoresQueryParametersWhenSelectingTheRootHandler)
