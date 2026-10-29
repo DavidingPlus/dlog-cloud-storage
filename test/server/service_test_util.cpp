@@ -200,6 +200,14 @@ namespace service_test
             result.m_response.m_code = evhttp_request_get_response_code(req);
             const char *contentType = evhttp_find_header(evhttp_request_get_input_headers(req), "Content-Type");
             if (contentType) result.m_response.m_contentType = contentType;
+            const char *contentLength = evhttp_find_header(evhttp_request_get_input_headers(req), "Content-Length");
+            if (contentLength) result.m_response.m_contentLength = contentLength;
+            const char *disposition = evhttp_find_header(evhttp_request_get_input_headers(req), "Content-Disposition");
+            if (disposition) result.m_response.m_contentDisposition = disposition;
+            const char *etag = evhttp_find_header(evhttp_request_get_input_headers(req), "ETag");
+            if (etag) result.m_response.m_etag = etag;
+            const char *acceptRanges = evhttp_find_header(evhttp_request_get_input_headers(req), "Accept-Ranges");
+            if (acceptRanges) result.m_response.m_acceptRanges = acceptRanges;
             auto *body = evhttp_request_get_input_buffer(req);
             result.m_response.m_body.resize(evbuffer_get_length(body));
             if (!result.m_response.m_body.empty())
@@ -210,9 +218,9 @@ namespace service_test
 
     void LocalHttpServer::OnTimeout(evutil_socket_t, short, void *arg) { event_base_loopbreak(static_cast<event_base *>(arg)); }
 
-    Response LocalHttpServer::get(const std::string &uri)
+    Response LocalHttpServer::get(const std::string &uri, const std::vector<std::pair<std::string, std::string>> &headers)
     {
-        return request(EVHTTP_REQ_GET, uri, {}, "");
+        return request(EVHTTP_REQ_GET, uri, headers, "");
     }
 
     Response LocalHttpServer::post(const std::string &uri, const std::vector<std::pair<std::string, std::string>> &headers, const std::string &body)

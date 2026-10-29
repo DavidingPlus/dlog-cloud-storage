@@ -149,6 +149,10 @@ namespace service_test
         int m_code = 0;
         std::string m_contentType;
         std::string m_body;
+        std::string m_contentLength;
+        std::string m_contentDisposition;
+        std::string m_etag;
+        std::string m_acceptRanges;
     };
 
     // 同一个真实事件循环驱动 HTTP 服务与客户端，使用系统分配的本地端口和有上限的等待。
@@ -158,7 +162,7 @@ namespace service_test
 
         explicit LocalHttpServer(server::Service &service);
         uint16_t port() const;
-        Response get(const std::string &uri);
+        Response get(const std::string &uri, const std::vector<std::pair<std::string, std::string>> &headers = {});
         Response post(const std::string &uri, const std::vector<std::pair<std::string, std::string>> &headers, const std::string &body);
 
     private:

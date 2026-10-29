@@ -318,8 +318,106 @@ void Service::ShowFileList(evhttp_request *req, void *arg)
     evhttp_send_reply(req, HTTP_OK, nullptr, nullptr);
 }
 
-void Service::Download(evhttp_request *, void *)
+void Service::Download(evhttp_request *req, void *arg)
 {
+    // 整体流程：解析下载 URL → 查询内存中的元数据 → 读取数据文件 → 按存储策略解压 → 返回原始文件内容。
+    // 上传负责写入数据文件和登记元数据；下载根据已有元数据找到文件，读取后直接响应，不新增元数据记录。
+    // 1. 检查 HTTP 方法，当前完整文件下载只接受 GET。
+    // 2. 提取 URI 路径并进行一次 URL 解码，得到元数据表中的请求路径键。
+    // 3. 按已解码的请求路径查询 FileMetadata，取得实际存储路径；记录不存在时返回 404。
+    // 4. 根据实际存储目录判断 StorageType，目录无法识别时返回 500；数据文件丢失时返回 404。
+    // 5. 读取磁盘文件；普通存储直接使用原字节，压缩存储在内存中解压，空文件返回空正文。
+    // 6. 设置二进制响应类型、下载文件名及 ETag。
+    // 7. 将完整的原始文件字节写入响应缓冲区，返回 200；读取或解压抛出异常时返回 500。
+    // 下载过程只读取数据文件，不创建解压临时文件，也不修改内存元数据表或磁盘元数据 JSON。
+
+    // 1. 其他方法返回 405，Allow 头说明当前接受 GET。
+    // TODO 后续补齐 HEAD 等方法的响应语义。
+    if (EVHTTP_REQ_GET != evhttp_request_get_command(req))
+    {
+        evhttp_add_header(evhttp_request_get_output_headers(req), "Allow", "GET");
+        evhttp_send_reply(req, HTTP_BADMETHOD, "Method Not Allowed", nullptr);
+        return;
+    }
+
+    Service *service = static_cast<Service *>(arg);
+
+    try
+    {
+        // 2. 从请求的原始编码路径解码得到 requestPath，查询参数不参与查找；加号仍表示加号。
+        // GenericCallback 的解码结果是其局部变量，这里重新读取原始 URI，避免对已解码的结果再次解码。
+        // TODO 后续统一复用路由解析的路径，并完善路由前缀匹配和 URI 错误处理。
+        auto requestPath = utils::urlDecode(evhttp_uri_get_path(evhttp_request_get_evhttp_uri(req)));
+
+        // 3. 元数据提供实际文件位置，不能直接把客户端请求路径当成磁盘路径。
+        FileMetadata info;
+        try
+        {
+            info = service->m_dataManager.getFileMetaDataByRequestPath(requestPath);
+        }
+        catch (const std::out_of_range &)
+        {
+            evhttp_send_reply(req, HTTP_NOTFOUND, "File not found", nullptr);
+            return;
+        }
+
+        // 4. 按照目录判断存储类型，同时判断数据文件是否存在。
+        auto filePath = info.m_absoluteFilePath;
+        StorageType storageType;
+
+        if (Config::GetInstance().getUncompressedFilesDirPath() == filePath.parent_path())
+        {
+            storageType = StorageType::Uncompressed;
+        }
+        else if (Config::GetInstance().getCompressedFilesDirPath() == filePath.parent_path())
+        {
+            storageType = StorageType::Compressed;
+        }
+        else
+        {
+            // 两个存储目录都未匹配，无法确定存储类型，返回内部错误并结束处理。但在正常的运作流程中根本走不到这个分支，只做防御性编程。
+            evhttp_send_reply(req, HTTP_INTERNAL, "Unknown storage directory", nullptr);
+            return;
+        }
+
+        utils::FileUtil file(filePath);
+        if (!file.exists())
+        {
+            evhttp_send_reply(req, HTTP_NOTFOUND, "File not found", nullptr);
+            return;
+        }
+
+        // 5. 先读取磁盘上实际保存的字节，若是压缩存储，在内存中解压为原始内容。
+        // TODO 后续在工具层补齐压缩数据损坏检测，并增加读取/解压后的大小限制。
+        // TODO 大文件发送优化：未压缩文件可使用 evbuffer_add_file() 直接发送，避免完整读入 content，并正确管理文件描述符的所有权和发送生命周期；压缩文件评估流式解压及分块发送，降低内存占用。
+        auto content = file.getContent();
+        if (StorageType::Compressed == storageType) content = utils::FileUtil::UnCompress(content);
+
+        // 6. 设置二进制响应类型、下载文件名及 ETag。
+        // TODO 后续补齐外部文件变化时的元数据同步、缓存条件请求，以及 Range/If-Range 断点下载。
+        auto etag = GetETag(info);
+        // Content-Disposition 用于明确浏览器的下载行为和保存文件名，下载主流程本身不依赖此响应头。attachment 建议按附件下载；filename* 指定建议文件名，避免浏览器仅根据请求路径推断名称。UTF-8'' 声明文件名使用 UTF-8，语言标记留空；百分号编码支持中文、空格等字符。例如文件名 "a b.txt" 会生成 "attachment; filename*=UTF-8''a%20b.txt"。
+        auto disposition = "attachment; filename*=UTF-8''" + utils::fileNameEncode(filePath.filename().string());
+        auto headers = evhttp_request_get_output_headers(req);
+
+        // 使用 ETag 提供文件版本标识。
+        evhttp_add_header(headers, "ETag", etag.data());
+        // 指定附件下载方式和建议文件名。
+        evhttp_add_header(headers, "Content-Disposition", disposition.data());
+        // 声明正文是通用二进制数据。
+        evhttp_add_header(headers, "Content-Type", "application/octet-stream");
+
+        // 7. 按长度发送二进制正文，保留 '\0'；libevent 会根据实际正文生成 Content-Length 响应字段。
+        // TODO 当前统一返回完整正文和 200；Range 尚未实现，暂不声明 Accept-Ranges: bytes。
+        auto outputBuf = evhttp_request_get_output_buffer(req);
+        evbuffer_add(outputBuf, content.data(), content.size());
+        evhttp_send_reply(req, HTTP_OK, "OK", nullptr);
+    }
+    catch (const std::exception &)
+    {
+        // TODO 接入日志后记录读取或解压异常，并补充并发删除、替换文件等场景的处理。
+        evhttp_send_reply(req, HTTP_INTERNAL, "Download failed", nullptr);
+    }
 }
 
 std::string Service::FormatFileTime(std::filesystem::file_time_type t)
