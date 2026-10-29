@@ -151,12 +151,12 @@ void DataManager::update(const FileMetadata &info)
     }
 }
 
-FileMetadata DataManager::getFileMetaDataByUrl(const std::string &url) const
+FileMetadata DataManager::getFileMetaDataByRequestPath(const std::string &requestPath) const
 {
     std::shared_lock lock(m_rwlock);
 
-    auto it = m_table.find(url);
-    if (m_table.end() == it) throw std::out_of_range("DataManager::getFileMetaDataByUrl(): URL not found: " + url);
+    auto it = m_table.find(requestPath);
+    if (m_table.end() == it) throw std::out_of_range("DataManager::getFileMetaDataByRequestPath(): request path not found: " + requestPath);
 
 
     return it->second;

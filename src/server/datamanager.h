@@ -61,8 +61,8 @@ public:
     // 按 URL 更新并持久化，保存失败时恢复旧记录；路径做词法标准化，URL 不存在时抛出 std::out_of_range。
     void update(const FileMetadata &info);
 
-    // 根据下载 URL 获取元数据副本，未找到时抛出 std::out_of_range。
-    FileMetadata getFileMetaDataByUrl(const std::string &url) const;
+    // 根据已解码的下载请求路径（例如 /download/a b.txt）获取元数据副本，未找到时抛出 std::out_of_range。
+    FileMetadata getFileMetaDataByRequestPath(const std::string &requestPath) const;
 
     // 根据文件路径获取元数据副本，相对路径以可执行文件所在目录为基准。
     // 查询路径转为绝对路径并做词法标准化后，与记录中的标准化路径比较；不要求文件存在，不解析符号链接。未找到时抛出 std::out_of_range。
@@ -87,7 +87,7 @@ private:
     // 元数据表的读写锁，允许 const 查询函数加锁。
     mutable std::shared_mutex m_rwlock;
 
-    // 以下载 URL 为键的元数据表。
+    // 以已解码的下载请求路径（m_url）为键的元数据表。
     std::unordered_map<std::string, FileMetadata> m_table;
 };
 

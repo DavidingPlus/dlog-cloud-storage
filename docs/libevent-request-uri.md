@@ -67,8 +67,8 @@ const char *query = evhttp_uri_get_query(uri);
 `evhttp_uri_get_path()` 负责提取路径，路径中的百分号编码仍然保留。项目中的 `utils::urlDecode()` 再把编码还原为原始字节：
 
 ```cpp
-std::string path = utils::urlDecode(rawPath);
-// path 为 "/download/a b.txt"。
+std::string requestPath = utils::urlDecode(rawPath);
+// requestPath 为 "/download/a b.txt"。
 ```
 
 `query` 此时仍是一整段查询字符串；需要读取其中的 `token` 等参数时，再单独解析键值。
@@ -91,7 +91,7 @@ std::string path = utils::urlDecode(rawPath);
 当前实现把“取 URI 对象、取路径、解码路径”合并在一行中：
 
 ```cpp
-std::string path = utils::urlDecode(evhttp_uri_get_path(evhttp_request_get_evhttp_uri(req)));
+std::string requestPath = utils::urlDecode(evhttp_uri_get_path(evhttp_request_get_evhttp_uri(req)));
 ```
 
 对于上述请求，三个步骤依次得到：
@@ -101,3 +101,5 @@ std::string path = utils::urlDecode(evhttp_uri_get_path(evhttp_request_get_evhtt
 3. 解码后的路径 `/download/a b.txt`。
 
 回调按路径判断下载、上传或首页处理。查询参数 `token=123` 不参与当前路由匹配，完整的 `req` 和上下文 `arg` 会继续传给对应业务处理函数。
+
+代码命名约定：`requestPath` 表示解码后的 HTTP 请求路径，用于路由及 `getFileMetaDataByRequestPath()` 查询；`filePath` 表示元数据记录的磁盘文件路径，用于文件读写及 `getFileMetaDataByFilePath()` 查询。

@@ -81,23 +81,23 @@ void Service::run()
 void Service::GenericCallback(evhttp_request *req, void *arg)
 {
     // evhttp_request_get_evhttp_uri() 取出 req 中已解析的 URI 对象；evhttp_uri_get_path() 读取路径，不含查询参数 query。路径中的 %HH 由 urlDecode() 还原，具体见 docs/libevent-request-uri.md。
-    std::string path = utils::urlDecode(evhttp_uri_get_path(evhttp_request_get_evhttp_uri(req)));
+    std::string requestPath = utils::urlDecode(evhttp_uri_get_path(evhttp_request_get_evhttp_uri(req)));
 
     // run() 注册回调时传入 this 指针。
     Service *service = static_cast<Service *>(arg);
 
     // 下载请求。
-    if (std::string::npos != path.find(service->m_downloadPrefix))
+    if (std::string::npos != requestPath.find(service->m_downloadPrefix))
     {
         Download(req, arg);
     }
     // 上传请求。
-    else if ("/upload" == path)
+    else if ("/upload" == requestPath)
     {
         Upload(req, arg);
     }
     // 显示已存储文件列表，返回一个 HTML 页面给浏览器。
-    else if ("/" == path)
+    else if ("/" == requestPath)
     {
         ShowFileList(req, arg);
     }
@@ -206,8 +206,8 @@ void Service::Upload(evhttp_request *req, void *arg)
         // TODO 引入并发上传时补齐文件排他创建，避免检查后被其他写入占用。
         try
         {
-            // getFileMetaDataByUrl() 函数未找到抛出异常，在 catch 分支被捕获然后正常执行后续，这正是我们想要的。如果找到，走 try 的后续分支返回 409。
-            service->m_dataManager.getFileMetaDataByUrl(service->m_downloadPrefix + fileName);
+            // getFileMetaDataByRequestPath() 函数未找到抛出异常，在 catch 分支被捕获然后正常执行后续，这正是我们想要的。如果找到，走 try 的后续分支返回 409。
+            service->m_dataManager.getFileMetaDataByRequestPath(service->m_downloadPrefix + fileName);
 
             evhttp_send_reply(req, 409, "File already exists", nullptr);
             return;

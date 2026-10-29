@@ -566,12 +566,12 @@ TEST_F(ServiceHttpTests, UploadsTextBinaryAndEmptyFilesAndRestoresTheirMetadata)
         EXPECT_EQ(utils::JsonUtil::UnSerialize(response.m_body)["url"].asString(), utils::urlEncode(url));
         const auto path = server::Config::GetInstance().getUncompressedFilesDirPath() / file.first;
         EXPECT_EQ(utils::FileUtil(path).getContent(), file.second);
-        const auto info = Access::data(service).getFileMetaDataByUrl(url);
+        const auto info = Access::data(service).getFileMetaDataByRequestPath(url);
         EXPECT_EQ(info.m_absoluteFilePath, path);
         EXPECT_EQ(info.m_fileSize, file.second.size());
         EXPECT_EQ(info.m_mtime, fs::last_write_time(path));
         server::DataManager restored;
-        EXPECT_EQ(restored.getFileMetaDataByUrl(url).m_absoluteFilePath, path);
+        EXPECT_EQ(restored.getFileMetaDataByRequestPath(url).m_absoluteFilePath, path);
     }
     EXPECT_EQ(Count(http.get("/").m_body, "class='file-item'"), files.size());
 }
@@ -621,12 +621,12 @@ TEST_F(ServiceHttpTests, UploadsCompressedFilesAndRecordsTheirStoredSize)
         EXPECT_EQ(utils::FileUtil::UnCompress(stored), file.second);
         if (file.second.empty()) EXPECT_TRUE(stored.empty());
         const auto url = "/download/" + file.first;
-        const auto info = Access::data(service).getFileMetaDataByUrl(url);
+        const auto info = Access::data(service).getFileMetaDataByRequestPath(url);
         EXPECT_EQ(info.m_absoluteFilePath, path);
         EXPECT_EQ(info.m_fileSize, stored.size());
         EXPECT_EQ(info.m_mtime, fs::last_write_time(path));
         server::DataManager restored;
-        EXPECT_EQ(restored.getFileMetaDataByUrl(url).m_fileSize, stored.size());
+        EXPECT_EQ(restored.getFileMetaDataByRequestPath(url).m_fileSize, stored.size());
         EXPECT_EQ(utils::JsonUtil::UnSerialize(response.m_body)["url"].asString(), utils::urlEncode(url));
         // 另一种策略使用同一下载 URL，也必须拒绝，保留原压缩文件。
         EXPECT_EQ(http.post("/upload", {{"FileName", base64_encode(file.first)}, {"StorageType", "uncompressed"}}, "replacement").m_code, 409);
@@ -649,7 +649,7 @@ TEST_F(ServiceHttpTests, CompressedUploadsUseTheConfiguredBundleFormat)
 
     const auto path = server::Config::GetInstance().getCompressedFilesDirPath() / name;
     EXPECT_EQ(utils::FileUtil(path).getContent(), content);
-    const auto info = Access::data(service).getFileMetaDataByUrl("/download/" + name);
+    const auto info = Access::data(service).getFileMetaDataByRequestPath("/download/" + name);
     EXPECT_EQ(info.m_absoluteFilePath, path);
     EXPECT_EQ(info.m_fileSize, content.size());
 }
@@ -729,13 +729,13 @@ TEST_F(ServiceHttpTests, RemovesTheUploadedFileWhenMetadataSavingFailsAndCanRetr
         EXPECT_EQ(http.post("/upload", headers, std::string(4096, 'A')).m_code, HTTP_INTERNAL);
         EXPECT_FALSE(fs::exists(path));
         EXPECT_EQ(Access::data(service).getAll().size(), originalCount);
-        EXPECT_THROW(Access::data(service).getFileMetaDataByUrl(url), std::out_of_range);
+        EXPECT_THROW(Access::data(service).getFileMetaDataByRequestPath(url), std::out_of_range);
         EXPECT_EQ(utils::FileUtil(m_metadataFile).getContent(), metadata);
         EXPECT_EQ(utils::FileUtil(existingPath).getContent(), "keep");
         EXPECT_EQ(utils::FileUtil(temporary).getContent(), "occupied");
         server::DataManager restored;
         EXPECT_EQ(restored.getAll().size(), originalCount);
-        EXPECT_THROW(restored.getFileMetaDataByUrl(url), std::out_of_range);
+        EXPECT_THROW(restored.getFileMetaDataByRequestPath(url), std::out_of_range);
 
         fs::remove(temporary);
         ASSERT_EQ(http.post("/upload", headers, "retry").m_code, 201);
