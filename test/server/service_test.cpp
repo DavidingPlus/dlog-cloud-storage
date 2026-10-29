@@ -858,6 +858,52 @@ TEST_F(ServiceHttpTests, DownloadsCompressedUploadsWithoutTemporaryFiles)
     EXPECT_EQ(utils::FileUtil(existing).getContent(), "keep");
 }
 
+TEST_F(ServiceHttpTests, DownloadsWithTrailingSeparatorsInConfiguredStorageDirectories)
+{
+    const std::string content = std::string(32768, 'A') + std::string("\0\xffz", 3);
+    for (bool useRelativePaths : {false, true})
+    {
+        SCOPED_TRACE(useRelativePaths ? "relative directories" : "absolute directories");
+        const auto directory = m_directory / (useRelativePaths ? "relative" : "absolute");
+        for (const char *type : {"uncompressed", "compressed"})
+        {
+            const auto path = directory / type;
+            const auto configuredPath = useRelativePaths ? path.lexically_relative(utils::executableDirectory()) : path;
+            m_config[std::string(type) + "_files_dir"] = configuredPath.string() + "/";
+        }
+        applyConfig();
+        writeMetadata({});
+
+        std::vector<std::string> urls;
+        {
+            server::Service service;
+            LocalHttpServer http(service);
+            for (const std::string type : {"uncompressed", "compressed"})
+            {
+                SCOPED_TRACE(type);
+                const auto uploaded = http.post("/upload", {{"FileName", base64_encode(type + ".bin")}, {"StorageType", type}}, content);
+                ASSERT_EQ(uploaded.m_code, 201);
+                urls.push_back(utils::JsonUtil::UnSerialize(uploaded.m_body)["url"].asString());
+                const auto response = http.get(urls.back());
+                ASSERT_EQ(response.m_code, HTTP_OK);
+                EXPECT_EQ(response.m_body, content);
+                EXPECT_EQ(response.m_contentLength, std::to_string(content.size()));
+            }
+        }
+
+        // 重建服务后，带末尾分隔符的配置也必须能识别持久化记录中的存储位置。
+        server::Service restored;
+        LocalHttpServer http(restored);
+        for (const auto &url : urls)
+        {
+            SCOPED_TRACE(url);
+            const auto response = http.get(url);
+            ASSERT_EQ(response.m_code, HTTP_OK);
+            EXPECT_EQ(response.m_body, content);
+        }
+    }
+}
+
 TEST_F(ServiceHttpTests, DownloadsUsingConfiguredPrefixAndDecodesTheOriginalPathOnce)
 {
     m_config["download_prefix"] = "/files/";

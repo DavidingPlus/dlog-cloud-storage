@@ -273,7 +273,7 @@ TODO：后续补充 SIGINT/SIGTERM 的正常停止流程，包括停止接收新
 对照[参考 Download 实现](https://github.com/youngyangyang04/Kama-AsynLogSystem-CloudStorage/blob/main/src/server/Service.hpp)，基础版本调整以下问题：
 
 - 参考未检查元数据查询是否成功；当前查询失败立即返回 404。
-- 参考按路径子串判断存储类型；当前按标准化后的实际父目录判断 StorageType。
+- 参考按路径子串判断存储类型；当前将配置目录与文件名组合为标准化路径，与元数据中的实际文件路径比较后判断 StorageType，兼容配置目录末尾带 `/` 的写法。
 - 参考把解压结果写入普通存储目录，可能覆盖或删除同名文件；当前仅在内存中解压。
 - 参考部分错误响应后没有立即返回，且仅凭 If-Range 就返回 206、未截取 Range；当前错误响应后立即返回，成功统一返回完整 200，也不声明 Accept-Ranges: bytes。
 

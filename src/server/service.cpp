@@ -365,11 +365,12 @@ void Service::Download(evhttp_request *req, void *arg)
         auto filePath = info.m_absoluteFilePath;
         StorageType storageType;
 
-        if (Config::GetInstance().getUncompressedFilesDirPath() == filePath.parent_path())
+        // 将配置目录与文件名组合后比较完整路径，兼容目录末尾带 / 的写法。
+        if ((Config::GetInstance().getUncompressedFilesDirPath() / filePath.filename()).lexically_normal() == filePath)
         {
             storageType = StorageType::Uncompressed;
         }
-        else if (Config::GetInstance().getCompressedFilesDirPath() == filePath.parent_path())
+        else if ((Config::GetInstance().getCompressedFilesDirPath() / filePath.filename()).lexically_normal() == filePath)
         {
             storageType = StorageType::Compressed;
         }
