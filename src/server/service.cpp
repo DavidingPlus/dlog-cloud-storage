@@ -110,17 +110,21 @@ void Service::GenericCallback(evhttp_request *req, void *arg)
 
 void Service::Upload(evhttp_request *req, void *arg)
 {
-    // 整体流程：先校验，再读取正文和保存。
+    // 整体流程：校验上传参数 → 保存数据文件 → 生成元数据 → 登记内存表并保存元数据文件 → 返回成功。
+    // 数据文件保存实际内容。元数据文件在哪里、占多少空间、何时修改以及如何下载。
     // 1. 检查 HTTP 方法，上传只接受 POST。
-    // 2. 读取请求头，检查字段是否缺失或为空，并将存储策略解析为 StorageType 枚举。
-    // 3. 解码文件名。
-    // 4. 根据 StorageType 枚举选择未压缩或压缩目录，拼出最终文件路径。
-    // 5. 检查下载 URL 和磁盘路径是否已被占用，避免覆盖已有数据。
-    // 6. 校验通过后，复制请求体中的原始文件字节，支持二进制内容和空文件。
-    // 7. 创建目录，未压缩策略直接保存，压缩策略按 bundle_format 压缩后保存。
-    // 8. 根据实际文件生成元数据，准备响应 JSON，再插入并持久化元数据。
-    // 9. 文件和元数据都保存成功后，返回 201 和 JSON。
-    // 保存失败时，DataManager 回滚新增记录，本函数尝试清理本次上传文件并返回 500。
+    // 2. 读取 FileName、StorageType 请求头，检查缺失或空值，并将存储策略解析为枚举。
+    // 3. 将 FileName 从 Base64 解码为原始文件名。
+    // 4. 根据存储策略选择配置目录，与文件名组合成最终数据文件路径。
+    // 5. 检查下载 URL 和磁盘路径是否已被占用，发生冲突返回 409。
+    // 6. 把请求正文中的原始文件字节复制到 content，保留二进制内容中的 '\0'，允许零字节文件。
+    // 7. 确保存储目录存在，将原始内容或按 bundle_format 压缩后的内容写入磁盘数据文件。
+    // 8. 数据文件写入成功后，再完成以下流程：
+    //    a. 根据实际文件生成 FileMetadata，包含绝对路径、修改时间、实际存储大小和下载 URL。
+    //    b. 准备含下载 URL 的 HTTP 响应 JSON，此时仅生成字符串，尚未发送给客户端。
+    //    c. 调用 DataManager::insert()，把这条记录加入内存表，再将整张表保存到所有文件共用的磁盘元数据 JSON 文件。
+    // 9. 数据文件和元数据都保存成功后，向客户端返回 201 和前面准备的响应 JSON。
+    // 元数据持久化失败时，DataManager 撤销内存表中的新增记录，并保留原磁盘元数据 JSON。文件写入或元数据保存失败后，Upload 尝试删除本次已开始写入的数据文件，并返回 500。
 
     // 1. 检查 HTTP 方法，上传只接受 POST。其他方法返回 405，Allow 头告诉客户端这里接受 POST。
     if (EVHTTP_REQ_POST != evhttp_request_get_command(req))
@@ -136,7 +140,7 @@ void Service::Upload(evhttp_request *req, void *arg)
 
     try
     {
-        // 第 2 步：读取 FileName、StorageType 请求头。先用原始指针接收 C 接口的返回值，检查字段是否存在。
+        // 2. 读取 FileName、StorageType 请求头。先用原始指针接收 C 接口的返回值，检查字段是否存在。
         auto headers = evhttp_request_get_input_headers(req);
         const char *nameHeader = evhttp_find_header(headers, "FileName");
         const char *typeHeader = evhttp_find_header(headers, "StorageType");
@@ -168,7 +172,7 @@ void Service::Upload(evhttp_request *req, void *arg)
             return;
         }
 
-        // 第 3 步：解码 UTF-8 文件名字节，例如 YS50eHQ= → a.txt；解码库报告错误时返回 400。
+        // 3. 解码 UTF-8 文件名字节，例如 YS50eHQ= → a.txt；解码库报告错误时返回 400。
         // TODO 当前 cpp-base64 的解码规则较宽松：例如 "Zg" 缺少填充、"Zg=!" 含非法字符，也都能解码为 "f"。因此，解码成功只说明库能还原出字节，不代表输入符合标准 Base64 格式。若协议要求标准格式，严格校验可拒绝这类非规范输入，让客户端明确收到编码错误，而不是被宽松接受。这是编解码层的格式约束，适合统一实现并复用；Upload 负责调用解码及处理结果。后续在编解码工具层统一提供严格 Base64 校验。
         // TODO 后续统一补充文件名合法性校验：空名称、.、..、路径分隔符、控制字符、UTF-8 有效性及长度等。
         std::string fileName;
@@ -182,7 +186,7 @@ void Service::Upload(evhttp_request *req, void *arg)
             return;
         }
 
-        // 第 4 步：请求头已解析为合法枚举，按枚举选择配置目录。
+        // 4. 请求头已解析为合法枚举，按枚举选择配置目录。
         std::filesystem::path directory;
 
         switch (storageType)
@@ -197,7 +201,7 @@ void Service::Upload(evhttp_request *req, void *arg)
 
         path = directory / fileName;
 
-        // 第 5 步：先查内存中是否已经有对应 URL 的元数据，再查磁盘上是否已有文件；任意一处占用都返回 409。
+        // 5. 先查内存中是否已经有对应 URL 的元数据，再查磁盘上是否已有文件；任意一处占用都返回 409。
         // 两种策略共用下载前缀和文件名，因此跨策略的同名文件也会冲突。
         // TODO 引入并发上传时补齐文件排他创建，避免检查后被其他写入占用。
         try
@@ -220,48 +224,67 @@ void Service::Upload(evhttp_request *req, void *arg)
             return;
         }
 
-        // TODO 后续检查。
-
-        // 第 6 步：通过前面的检查后，再分配内存并复制正文，保留二进制内容中的 '\0'。
+        // 6. 通过前面的检查后，再分配内存并复制正文，保留二进制内容中的 '\0'。
         // TODO 在 HTTP 接收层和这里分配内存前统一限制上传大小。
-        auto input = evhttp_request_get_input_buffer(req);
-        auto length = evbuffer_get_length(input);
-        std::string content(length, '\0');
-        // copyout() 复制但不移除输入字节；空正文跳过复制，之后仍会创建零字节文件。
-        if (length && evbuffer_copyout(input, content.data(), length) != static_cast<ev_ssize_t>(length)) throw std::runtime_error("Service::Upload(): evbuffer_copyout() failed");
 
-        // 第 7 步：创建目录；只有压缩策略先处理内容，随后两种策略共用 setContent() 写入。
-        // bundle 可能对不适合压缩的内容保留原字节，因此 compressed 不保证文件更小。
+        // 取得请求正文缓冲区。
+        auto inputBuf = evhttp_request_get_input_buffer(req);
+        // 取得请求正文的字节数。
+        size_t length = evbuffer_get_length(inputBuf);
+
+        // 准备接收内容的 content。
+        std::string content(length, '\0');
+        // 空 length 跳过复制，之后仍会创建零字节文件。
+        if (length)
+        {
+            // evbuffer_copyout() 复制但不移除输入字节。
+            if (static_cast<ev_ssize_t>(length) != evbuffer_copyout(inputBuf, content.data(), length)) throw std::runtime_error("Service::Upload(): evbuffer_copyout() failed");
+        }
+
+        // 7. 创建目录。压缩策略先处理内容，随后两种策略共用 setContent() 写入。
+
+        // createDirectory() 使用 std::filesystem::create_directories()。目录不存在：创建目录，包括缺失的父目录。目录已存在：直接继续，不会清空目录或重新创建。
         utils::FileUtil(directory).createDirectory();
+
+        // bundle 可能对不适合压缩的内容保留原字节，因此 compressed 不保证文件更小。
         if (StorageType::Compressed == storageType) content = utils::FileUtil::Compress(content, Config::GetInstance().getBundleFormat());
-        // 写入前设置标记，写到一半失败时也能清理残留文件。
+
+        // 写入前设置标记，保证写到一半失败时也能清理残留文件。
         fileWriteStarted = true;
+
         utils::FileUtil(path).setContent(content);
 
-        // 第 8 步：从实际磁盘文件生成元数据，记录存储路径、修改时间和实际存储大小。
-        // 先准备 JSON，避免序列化失败时已经提交元数据；对外下载 URL 进行百分号编码。
-        const auto info = FileMetadata::FromFile(path);
+        // 8. 从实际磁盘文件生成元数据，记录存储路径、修改时间和实际存储大小，然后添加到内存表中。
+        // 这里有两份用途不同的 JSON：body 是给客户端的响应，m_dataManager 持久化的 JSON 是服务端的文件元数据。
+
+        // 从磁盘文件生成元数据。
+        auto info = FileMetadata::FromFile(path);
+
+        // 先准备成功响应的 JSON，避免序列化失败时已经提交元数据；对外下载 URL 进行百分号编码。
         Json::Value result;
         result["url"] = utils::urlEncode(info.m_url);
-        const auto body = utils::JsonUtil::Serialize(result);
-        // insert() 新增内存记录并保存元数据 JSON；保存失败时撤销新增，再抛异常进入下面的 catch。
+        auto body = utils::JsonUtil::Serialize(result);
+
+        // insert() 新增内存记录并持久化元数据 JSON 文件。保存失败时撤销新增，再抛异常进入下面的 catch，这一步是由 insert() 保证的。
         service->m_dataManager.insert(info);
 
-        // 第 9 步：文件和元数据全部保存成功后，用请求自带的输出缓冲区返回 201 和 JSON。
-        auto *output = evhttp_request_get_output_buffer(req);
-        evbuffer_add(output, body.data(), body.size());
+        // 9. 数据文件和元数据文件全部保存成功后，用请求自带的输出缓冲区返回 201 和 JSON。
+        auto outputBuf = evhttp_request_get_output_buffer(req);
+        evbuffer_add(outputBuf, body.data(), body.size());
         evhttp_add_header(evhttp_request_get_output_headers(req), "Content-Type", "application/json;charset=utf-8");
         evhttp_send_reply(req, 201, "Created", nullptr);
     }
     catch (const std::exception &)
     {
         // TODO: 接入日志后记录原始异常，并报告文件清理错误。
+
         // 只清理本次已经开始写入的文件；error_code 重载避免清理失败再次抛异常。
         if (fileWriteStarted)
         {
             std::error_code error;
             std::filesystem::remove(path, error);
         }
+
         evhttp_send_reply(req, HTTP_INTERNAL, "Upload failed", nullptr);
     }
 }
@@ -280,7 +303,7 @@ void Service::ShowFileList(evhttp_request *req, void *arg)
 
     // regex_replace() 用 $$ 表示字面的 $，防止文件列表中的 $& 等内容被解释成替换指令。
     std::string fileListHtml;
-    for (const char ch : GenerateFileListHtml(files))
+    for (auto &ch : GenerateFileListHtml(files))
     {
         if ('$' == ch) fileListHtml += '$';
 
@@ -356,12 +379,12 @@ std::string Service::GenerateFileListHtml(const std::vector<FileMetadata> &files
     std::ostringstream stream;
     stream << "<div class='file-list'><h3>已上传文件</h3>";
 
-    const auto compressedDir = Config::GetInstance().getCompressedFilesDirPath();
-    for (const auto &file : files)
+    auto compressedDir = Config::GetInstance().getCompressedFilesDirPath();
+    for (auto &file : files)
     {
-        const auto path = file.m_absoluteFilePath.lexically_normal();
+        auto path = file.m_absoluteFilePath.lexically_normal();
         // 按配置的实际目录判断存储类型，避免根据文件名中的 compressed 等字样误判。
-        const bool isCompressed = path == (compressedDir / path.filename()).lexically_normal();
+        bool isCompressed = path == (compressedDir / path.filename()).lexically_normal();
 
         stream << "<div class='file-item'>"
                << "<div class='file-info'>"
