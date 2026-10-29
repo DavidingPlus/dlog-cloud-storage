@@ -2,6 +2,9 @@
 
 #include <base64.h>
 
+#include <bundle.h>
+
+
 using namespace service_test;
 
 
@@ -612,9 +615,11 @@ TEST_F(ServiceHttpTests, UploadsCompressedFilesAndRecordsTheirStoredSize)
         SCOPED_TRACE(file.first);
         const auto response = http.post("/upload", {{"FileName", base64_encode(file.first)}, {"StorageType", "compressed"}}, file.second);
         ASSERT_EQ(response.m_code, 201);
+        EXPECT_EQ(response.m_contentType, "application/json;charset=utf-8");
         const auto path = server::Config::GetInstance().getCompressedFilesDirPath() / file.first;
         const auto stored = utils::FileUtil(path).getContent();
         EXPECT_EQ(utils::FileUtil::UnCompress(stored), file.second);
+        if (file.second.empty()) EXPECT_TRUE(stored.empty());
         const auto url = "/download/" + file.first;
         const auto info = Access::data(service).getFileMetaDataByUrl(url);
         EXPECT_EQ(info.m_absoluteFilePath, path);
@@ -629,6 +634,24 @@ TEST_F(ServiceHttpTests, UploadsCompressedFilesAndRecordsTheirStoredSize)
     }
     const auto path = server::Config::GetInstance().getCompressedFilesDirPath() / files.front().first;
     EXPECT_LT(utils::FileUtil(path).fileSize(), files.front().second.size());
+}
+
+TEST_F(ServiceHttpTests, CompressedUploadsUseTheConfiguredBundleFormat)
+{
+    // RAW 保留原始字节；使用可压缩内容，确认 Upload 没有忽略配置而固定使用默认压缩算法。
+    m_config["bundle_format"] = bundle::RAW;
+    applyConfig();
+    server::Service service;
+    LocalHttpServer http(service);
+    const std::string content(32768, 'A');
+    const std::string name = "configured.txt";
+    ASSERT_EQ(http.post("/upload", {{"FileName", base64_encode(name)}, {"StorageType", "compressed"}}, content).m_code, 201);
+
+    const auto path = server::Config::GetInstance().getCompressedFilesDirPath() / name;
+    EXPECT_EQ(utils::FileUtil(path).getContent(), content);
+    const auto info = Access::data(service).getFileMetaDataByUrl("/download/" + name);
+    EXPECT_EQ(info.m_absoluteFilePath, path);
+    EXPECT_EQ(info.m_fileSize, content.size());
 }
 
 TEST_F(ServiceHttpTests, RejectsUploadConflictsAndPreservesExistingData)
