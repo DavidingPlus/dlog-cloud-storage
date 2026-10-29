@@ -19,6 +19,8 @@
 #include <event2/event.h>
 #include <event2/http.h>
 
+#include <utf8.h>
+
 
 DLOG_CLOUD_STORAGE_NAMESPACE_BEGIN(server)
 
@@ -40,6 +42,21 @@ namespace
         {
             throw std::invalid_argument("parseStorageType(): unsupported storage type: " + storageTypeText);
         }
+    }
+
+    bool isValidFileName(std::string_view fileName)
+    {
+        // 1. 文件名不能为空，也不能是特殊目录名。
+        if (fileName.empty() || "." == fileName || ".." == fileName) return false;
+
+        // 2. 限制文件名长度，按字节计算。
+        if (fileName.size() > 255) return false;
+
+        // 3. Linux 文件名不能包含 '/' 或 NUL。
+        if (std::string_view::npos != fileName.find('/') || std::string_view::npos != fileName.find('\0')) return false;
+
+        // 4. 要求文件名符合 UTF-8 编码。
+        return utf8::is_valid(fileName.begin(), fileName.end());
     }
 
 }
@@ -140,7 +157,7 @@ void Service::Upload(evhttp_request *req, void *arg)
     // 数据文件保存实际内容。元数据文件在哪里、占多少空间、何时修改以及如何下载。
     // 1. 检查 HTTP 方法，上传只接受 POST。
     // 2. 读取 FileName、StorageType 请求头，检查缺失或空值，并将存储策略解析为枚举。
-    // 3. 将 FileName 从 Base64 解码为原始文件名。
+    // 3. 将 FileName 从 Base64 解码，校验单个文件名、UTF-8 和长度。
     // 4. 根据存储策略选择配置目录，与文件名组合成最终数据文件路径。
     // 5. 检查下载 URL 和磁盘路径是否已被占用，发生冲突返回 409。
     // 6. 把请求正文中的原始文件字节复制到 content，保留二进制内容中的 '\0'，允许零字节文件。
@@ -198,9 +215,8 @@ void Service::Upload(evhttp_request *req, void *arg)
             return;
         }
 
-        // 3. 解码 UTF-8 文件名字节，例如 YS50eHQ= → a.txt；解码库报告错误时返回 400。
+        // 3. 解码 UTF-8 文件名字节，例如 YS50eHQ= → a.txt；解码或文件名校验失败时返回 400。
         // TODO 当前 cpp-base64 的解码规则较宽松：例如 "Zg" 缺少填充、"Zg=!" 含非法字符，也都能解码为 "f"。因此，解码成功只说明库能还原出字节，不代表输入符合标准 Base64 格式。若协议要求标准格式，严格校验可拒绝这类非规范输入，让客户端明确收到编码错误，而不是被宽松接受。这是编解码层的格式约束，适合统一实现并复用；Upload 负责调用解码及处理结果。后续在编解码工具层统一提供严格 Base64 校验。
-        // TODO 后续统一补充文件名合法性校验：空名称、.、..、路径分隔符、控制字符、UTF-8 有效性及长度等。
         std::string fileName;
         try
         {
@@ -209,6 +225,13 @@ void Service::Upload(evhttp_request *req, void *arg)
         catch (...)
         {
             evhttp_send_reply(req, HTTP_BADREQUEST, "Invalid Base64 fileName", nullptr);
+            return;
+        }
+
+        // 校验 fileName 后才构造路径 path。
+        if (!isValidFileName(fileName))
+        {
+            evhttp_send_reply(req, HTTP_BADREQUEST, "Invalid file name", nullptr);
             return;
         }
 

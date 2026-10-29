@@ -9,7 +9,7 @@ local version = "0.0.0"
 -- 项目包依赖的唯一清单，每项填写 XMake 依赖规格字符串，例如 "fmt >=10.2.1"。common 对所有平台生效；windows 和 linux 分别只在对应目标平台生效。
 -- 此表同时驱动 add_requires 和 target 的 add_packages；新增依赖只需在这里登记。
 local package_dependencies = {
-    common = {"bundle", "jsoncpp", "cpp-base64 2.rc.09", "libevent"},
+    common = {"bundle", "jsoncpp", "cpp-base64 2.rc.09", "libevent", "utfcpp"},
     windows = {},
     linux = {}
 }

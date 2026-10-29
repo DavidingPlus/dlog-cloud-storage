@@ -38,7 +38,7 @@
 | `8.后续优化.md` | 普通存储完成后，再选择需要的扩展 |
 | `【补充】客户端扩展.md` | 后续需要自动扫描和上传客户端文件时再实施 |
 
-HTTP 服务和 JSON 处理沿用参考项目的 libevent、JsonCpp，文件名通过 cpp-base64 编解码，压缩处理使用 bundle。当前已引入 JsonCpp、bundle 和 cpp-base64，libevent 与 dlog 的应用侧接入待完成。压缩阶段再验证通过 HTTP 上传、压缩、下载解压的完整流程。依赖版本以实际安装、编译和运行验证的结果为准。
+HTTP 服务和 JSON 处理沿用参考项目的 libevent、JsonCpp，文件名通过 cpp-base64 编解码，使用 UTF8-CPP（XMake 包名 `utfcpp`）校验 UTF-8，压缩处理使用 bundle。当前已引入以上依赖，dlog 的应用侧接入待完成。压缩上传与下载解压已接入真实 HTTP 测试，浏览器整体验收后续补齐。依赖版本以实际安装、编译和运行验证的结果为准。
 
 资料：[libevent HTTP 服务说明](https://libevent.org/libevent-book/Ref10_http_server.html)、[JsonCpp](https://github.com/open-source-parsers/jsoncpp)、[bundle](https://github.com/r-lyeh-archived/bundle)。
 
@@ -67,7 +67,7 @@ flowchart LR
 | `src/server/main.cpp` | 按顺序初始化配置、日志、数据目录、元数据和服务；完成退出清理 |
 | `src/server/applogging.h/.cpp` | 按需封装应用侧 `InitLogging()`、`ShutdownLogging()`，管理异步后端的生命周期 |
 | `src/server/config.h/.cpp` | 已实现服务地址、端口、下载前缀、文件目录、元数据路径和压缩格式配置 |
-| `src/utils/fileutil.h/.cpp`、`src/utils/common.h/.cpp` | 已实现路径定位、二进制读写、目录操作、压缩解压、URL 编解码与 HTML 文本转义；文件名校验等按需补充 |
+| `src/utils/fileutil.h/.cpp`、`src/utils/common.h/.cpp` | 已实现路径定位、二进制读写、目录操作、压缩解压、URL 编解码与 HTML 文本转义等通用功能 |
 | `src/server/datamanager.h/.cpp` | 已实现 `FileMetadata`、内存查询、JSON 持久化和启动恢复 |
 | `src/server/service.h/.cpp` | 已实现 HTTP 监听、路由、列表页面、两种上传策略及完整文件下载；上传参数和下载策略使用存储类型枚举 |
 | `src/server/web/template.html` | 服务端页面模板，包含文件选择、上传、列表和下载链接 |
@@ -88,7 +88,7 @@ flowchart LR
 
 压缩文件的 `m_fileSize` 表示压缩处理后的磁盘文件大小，页面显示为“存储大小”。若后续需要展示原始大小，再扩展元数据并处理旧 JSON 的加载兼容。`m_mtime` 使用 `std::filesystem::file_time_type`，展示为日历时间前需要转换时钟，不能直接当作 `time_t` 传给 `std::ctime()`。
 
-第一版同名上传返回冲突，保留已有文件。由于下载 URL 仅由前缀和文件名组成，两种存储策略之间的同名文件也视为冲突。名称判断还要考虑当前文件系统的大小写规则。文件名合法性校验暂列 TODO；后续要求名称只表示一个文件，拒绝目录分隔符、绝对路径、`.`、`..`、控制字符及当前平台不支持的名称。文件路径由服务端使用配置目录和解码后的名称组合。
+第一版同名上传返回冲突，保留已有文件。由于下载 URL 仅由前缀和文件名组成，两种存储策略之间的同名文件也视为冲突。名称判断还要考虑当前文件系统的大小写规则。服务端仅运行于 Linux，`Service` 在 Base64 解码后校验上传文件名：必须是有效 UTF-8，长度为 1~255 字节，只表示单个文件；拒绝 `.`、`..`、斜杠 `/` 及内嵌空字节 NUL，因此不能传入 Linux 绝对路径或目录跳转路径。反斜杠和除 NUL 外的 C0/DEL/C1 控制字符按 Linux 普通文件名字节处理，允许上传。校验在路径拼接、创建目录和写入文件前完成，失败返回 400，文件及元数据保持不变。中文、空格、加号及其他合法名称内容保持原样，不裁剪、规范化或额外进行 URL 解码；字面的 `%2F` 可以作为文件名内容。文件路径由服务端使用配置目录和校验后的名称组合。
 
 ## 4. dlog 能力与接入生命周期
 
@@ -145,7 +145,7 @@ DLOG_INFO() << "upload finished, file=" << filename
 | 请求头 | 约定 |
 | --- | --- |
 | `Content-Type` | `application/octet-stream`，请求体直接存放原始文件字节 |
-| `FileName` | 必填；将原始文件名的 UTF-8 字节按标准 Base64 编码。服务端解码，文件名合法性校验后续补齐 |
+| `FileName` | 必填；将原始文件名的 UTF-8 字节按标准 Base64 编码。服务端解码后校验单个文件名、UTF-8 及 1~255 字节长度 |
 | `StorageType` | 必填；取值统一使用小写，仅接受 `uncompressed` 或 `compressed` |
 
 | `StorageType` 取值 | 服务端行为 | 对应配置 |
@@ -177,7 +177,7 @@ enum class StorageType
 };
 ```
 
-完整协议要求：`FileName` 或 `StorageType` 缺失、空值、文件名 Base64 编码非法或解码后的文件名不合法，以及未知存储类型，均返回 `400 Bad Request`。当前支持两种策略，检查字段缺失及空值，并按 cpp-base64 的规则解码；解码后的文件名合法性校验暂列 TODO。解码库报告的错误返回 400；严格编码格式校验留 TODO，后续由编解码工具层统一提供。请求头缺失时 `evhttp_find_header()` 返回 `nullptr`，在构造 `std::string` 前返回 400；指针有效但字段值为空时，由后面的 `empty()` 检查返回 400。缺失字段回归测试已启用。文件名的空名称、`.`、`..`、路径分隔符、控制字符、UTF-8 有效性和长度等检查后续统一补齐。
+完整协议要求：`FileName` 或 `StorageType` 缺失、空值、文件名 Base64 编码非法或解码后的文件名不合法，以及未知存储类型，均返回 `400 Bad Request`。当前支持两种策略，检查字段缺失及空值，并按 cpp-base64 的规则解码；解码库报告的错误返回 400。解码后通过 `isValidFileName()` 检查名称是否为空或为 `.`、`..`，是否含 `/` 或 NUL，以及长度是否超过 255 字节；随后调用 UTF8-CPP 的 `utf8::is_valid()`，拒绝不完整序列、非法续字节、过长编码、代理区及超出 Unicode 范围的码点。反斜杠及其他控制字符不额外禁止。严格 Base64 编码格式校验仍留 TODO，后续由编解码工具层统一提供。请求头缺失时 `evhttp_find_header()` 返回 `nullptr`，在构造 `std::string` 前返回 400；指针有效但字段值为空时，由后面的 `empty()` 检查返回 400。真实 HTTP 测试覆盖非法名称及已有文件保护，并验证两种策略下合法名称、255 字节边界、反斜杠和控制字符的上传下载及元数据恢复。
 
 其他失败使用 404（文件或路径不存在）、405（方法不支持）、409（同名冲突）、413（文件过大）、500（内部读写失败）。上传参数统一从请求头读取。
 
@@ -257,14 +257,14 @@ TODO：后续补充 SIGINT/SIGTERM 的正常停止流程，包括停止接收新
 
 #### 第 5 步：接入 HTTP 上传
 
-当前上传先检查 POST、请求头缺失及空值，将存储策略解析为枚举后再解码文件名，并通过按 URL 查询及磁盘路径检查拒绝同名；校验通过后才复制二进制正文、创建目录，直接保存或按 `bundle_format` 压缩后保存，再生成并持久化元数据，成功返回 201 和包含下载 `url` 的 JSON。允许零字节文件；元数据保存失败时由 DataManager 回滚内存，本函数尝试清理本次文件。`encodedFileName`、`storageTypeText` 在原始指针判空后构造为 `std::string`，FileName 通过 `empty()` 检查空值；`storageTypeText` 交给匿名命名空间函数 `parseStorageType()` 校验并转换为 `StorageType storageType`，参数异常由 Upload 转为 400，后续业务分支统一使用枚举。严格 Base64 校验留待编解码工具层统一提供，Upload 不再重新编码比对。文件名合法性校验（含空名称、目录跳转、路径分隔符、控制字符、UTF-8 与长度）、上传大小限制、并发排他创建、日志及清理错误报告均留 TODO。
+当前上传先检查 POST、请求头缺失及空值，将存储策略解析为枚举后再解码并校验文件名，通过按 URL 查询及磁盘路径检查拒绝同名；校验通过后才复制二进制正文、创建目录，直接保存或按 `bundle_format` 压缩后保存，再生成并持久化元数据，成功返回 201 和包含下载 `url` 的 JSON。允许零字节文件；元数据保存失败时由 DataManager 回滚内存，本函数尝试清理本次文件。`encodedFileName`、`storageTypeText` 在原始指针判空后构造为 `std::string`，FileName 通过 `empty()` 检查空值；`storageTypeText` 交给匿名命名空间函数 `parseStorageType()` 校验并转换为 `StorageType storageType`，参数异常由 Upload 转为 400，后续业务分支统一使用枚举。解码后的名称由匿名命名空间函数 `isValidFileName()` 校验，规则见第 3、5 节。严格 Base64 校验留待编解码工具层统一提供，Upload 不再重新编码比对。上传大小限制、并发排他创建、日志及清理错误报告仍留 TODO。
 
 1. 使用第 5 节约定的 `POST /upload`，读取 `FileName`、`StorageType` 请求头，将 UTF-8 文件名从 Base64 解码，将请求头字符串解析为 `StorageType` 枚举并按枚举判断存储策略，并读取二进制请求体。
 2. 校验必填请求头、编码、文件名、大小限制、目标路径占用和下载 URL 冲突；接受 `uncompressed` 和 `compressed`，允许零字节文件。请求体大小限制应同时设置在 HTTP 接收层，并在业务处理分配内存前检查实际长度。
 3. 未压缩策略将正文直接保存到 `getUncompressedFilesDirPath()`；压缩策略调用 `FileUtil::Compress()` 后保存到 `getCompressedFilesDirPath()`。使用最终文件路径调用 `FileMetadata::FromFile()`，插入并持久化元数据；全部成功后返回 201 和结果 JSON。
 4. 日志记录文件名、大小、结果和错误原因，正文保持简短。
 
-验收：先用 HTTP 工具上传文本、二进制和零字节文件；磁盘内容一致，元数据正确；缺失请求头、解码库报告的 Base64 错误、未知存储类型等返回 400；失败响应不会出现成功条目。
+验收：先用 HTTP 工具上传文本、二进制和零字节文件；磁盘内容一致，元数据正确；缺失请求头、解码库报告的 Base64 错误、非法文件名、未知存储类型等返回 400；失败响应不会出现成功条目。
 
 #### 第 6 步：列表与下载
 
@@ -397,9 +397,9 @@ dlog 的 `DLOG_FATAL()` 在输出后调用刷新回调，再终止进程；默�
 
 当前仓库采用“通用工具静态库 + Linux 服务端静态库 + 服务端可执行程序 + 单元测试”的 XMake 应用工程，服务端主目标为 `dlog-cloud-storage-server`。已有 Linux 安装与打包流程，通用工具、服务端配置和元数据管理已有实现与单元测试。
 
-当前包依赖包括 libevent、bundle、JsonCpp 和 cpp-base64。`Service` 已具备上传、列表页面和完整文件下载，两种存储策略通过真实 HTTP 测试；`src/server/main.cpp` 目前仍只读取并输出配置，应用启动流程、dlog 接入及浏览器整体验收待完成。
+当前包依赖包括 libevent、bundle、JsonCpp、cpp-base64 和 UTF8-CPP。`Service` 已具备上传、列表页面和完整文件下载，两种存储策略通过真实 HTTP 测试；`src/server/main.cpp` 目前仍只读取并输出配置，应用启动流程、dlog 接入及浏览器整体验收待完成。
 
 2026-10-22 确认上传采用自定义请求头协议：`FileName` 传递 UTF-8 文件名的 Base64 编码，`StorageType` 使用 `uncompressed`、`compressed`。本次同步整理 Service 的职责、上传和下载流程、页面上传方式及验收要求，并校正现有目录、构建目标和基础模块状态；HTTP 功能仍属于待实施内容。
 
-下一步将已有 Service 接入应用启动入口，补齐首次启动的数据目录和元数据文件初始化、应用侧 dlog 接入及停止流程，再验证浏览器上传、列表、下载和重启恢复。元数据持久化失败回滚已实现；大小限制、完整文件名校验、缓存验证、Range 和压缩数据损坏检测继续按 TODO 后续实施。
+下一步将已有 Service 接入应用启动入口，补齐首次启动的数据目录和元数据文件初始化、应用侧 dlog 接入及停止流程，再验证浏览器上传、列表、下载和重启恢复。元数据持久化失败回滚及上传文件名校验已实现；上传/下载大小限制、严格 Base64 校验、缓存验证、Range 和压缩数据损坏检测继续按 TODO 后续实施。
 

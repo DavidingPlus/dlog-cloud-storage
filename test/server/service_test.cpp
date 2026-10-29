@@ -604,9 +604,164 @@ TEST_F(ServiceHttpTests, RejectsInvalidUploadParametersBeforeCreatingFiles)
         EXPECT_EQ(http.post("/upload", {{"FileName", "YS50eHQ="}, {"StorageType", type}}, "data").m_code, HTTP_BADREQUEST);
     for (const char *name : {"", "!m9v", "Z"})
         EXPECT_EQ(http.post("/upload", {{"FileName", name}, {"StorageType", "uncompressed"}}, "data").m_code, HTTP_BADREQUEST);
-    // TODO: 文件名合法性校验补齐后，再恢复目录跳转、路径分隔符、控制字符等非法名称用例。
     EXPECT_TRUE(Access::data(service).getAll().empty());
     EXPECT_FALSE(fs::exists(server::Config::GetInstance().getUncompressedFilesDirPath()));
+}
+
+TEST_F(ServiceHttpTests, RejectsFileNamesThatEscapeTheStorageDirectory)
+{
+    server::Service service;
+    LocalHttpServer http(service);
+    const auto absolutePath = m_directory / "absolute-upload.txt";
+    const auto escapedPath = m_directory / "escaped-upload.txt";
+    const auto metadata = utils::FileUtil(m_metadataFile).getContent();
+    for (const std::string type : {"uncompressed", "compressed"})
+    {
+        SCOPED_TRACE(type);
+        for (const auto &name : std::vector<std::string>{"../escaped-upload.txt", absolutePath.string()})
+        {
+            SCOPED_TRACE(name);
+            const auto response = http.post("/upload", {{"FileName", base64_encode(name)}, {"StorageType", type}}, "data");
+            EXPECT_EQ(response.m_code, HTTP_BADREQUEST);
+            EXPECT_TRUE(Access::data(service).getAll().empty());
+            EXPECT_EQ(utils::FileUtil(m_metadataFile).getContent(), metadata);
+            EXPECT_FALSE(fs::exists(absolutePath));
+            EXPECT_FALSE(fs::exists(escapedPath));
+            EXPECT_FALSE(fs::exists(server::Config::GetInstance().getUncompressedFilesDirPath()));
+            EXPECT_FALSE(fs::exists(server::Config::GetInstance().getCompressedFilesDirPath()));
+        }
+    }
+}
+
+TEST_F(ServiceHttpTests, RejectsInvalidFileNamesBeforeCreatingFiles)
+{
+    server::Service service;
+    LocalHttpServer http(service);
+    const auto metadata = utils::FileUtil(m_metadataFile).getContent();
+    const std::vector<std::string> names{
+        "", ".", "..", "./a.txt", "a/b.txt", "a/../b.txt", "a/", std::string(1, '\0'), std::string("a\0.txt", 6),
+        std::string(256, 'a'), std::string(252, 'a') + u8"😀", std::string(254, 'a') + u8"中",
+        "\x80", "\xbf", "\xc0\xaf", "\xc1\xbf", "\xc2", "\xc2 ", "\xe0\x80\xaf", "\xe2\x82", "\xe2(\xa1",
+        "\xed\xa0\x80", "\xed\xbf\xbf", "\xf0\x80\x80\xaf", "\xf0\x9f\x98", "\xf0(\x8c\xbc", "\xf4\x90\x80\x80", "\xf5\x80\x80\x80", "\xff"};
+
+    for (const std::string type : {"uncompressed", "compressed"})
+    {
+        SCOPED_TRACE(type);
+        for (const auto &name : names)
+        {
+            const auto encoded = base64_encode(name);
+            SCOPED_TRACE(encoded);
+            EXPECT_EQ(http.post("/upload", {{"FileName", encoded}, {"StorageType", type}}, "data").m_code, HTTP_BADREQUEST);
+        }
+    }
+    EXPECT_TRUE(Access::data(service).getAll().empty());
+    EXPECT_EQ(utils::FileUtil(m_metadataFile).getContent(), metadata);
+    EXPECT_FALSE(fs::exists(server::Config::GetInstance().getUncompressedFilesDirPath()));
+    EXPECT_FALSE(fs::exists(server::Config::GetInstance().getCompressedFilesDirPath()));
+}
+
+TEST_F(ServiceHttpTests, UploadsLinuxFileNamesWithBackslashesAndControlCharacters)
+{
+    std::vector<std::string> names{"a\\b.txt", "\\a.txt", "C:\\a.txt", "\\\\server\\share\\a.txt", "..\\outside.txt", "a\x7f.txt"};
+    // Linux 允许这些普通文件名字节；UTF-8 编码有效且不含 NUL 即可。
+    for (unsigned int ch = 1; ch < 32; ++ch) names.push_back("a" + std::string(1, static_cast<char>(ch)) + ".txt");
+    for (unsigned int ch = 0x80; ch <= 0x9f; ++ch) names.push_back("a\xc2" + std::string(1, static_cast<char>(ch)) + ".txt");
+
+    const std::string content = std::string(4096, 'A') + std::string("\0\xffz", 3);
+    std::vector<std::string> urls;
+    {
+        server::Service service;
+        LocalHttpServer http(service);
+        for (const std::string type : {"uncompressed", "compressed"})
+        {
+            SCOPED_TRACE(type);
+            for (const auto &baseName : names)
+            {
+                const auto name = baseName + "-" + type;
+                SCOPED_TRACE(base64_encode(name));
+                const auto uploaded = http.post("/upload", {{"FileName", base64_encode(name)}, {"StorageType", type}}, content);
+                ASSERT_EQ(uploaded.m_code, 201);
+                const auto url = utils::JsonUtil::UnSerialize(uploaded.m_body)["url"].asString();
+                EXPECT_EQ(url, utils::urlEncode("/download/" + name));
+                urls.push_back(url);
+                const auto info = Access::data(service).getFileMetaDataByRequestPath("/download/" + name);
+                EXPECT_EQ(info.m_absoluteFilePath.filename().string(), name);
+                const auto downloaded = http.get(url);
+                ASSERT_EQ(downloaded.m_code, HTTP_OK);
+                EXPECT_EQ(downloaded.m_body, content);
+                EXPECT_EQ(downloaded.m_contentDisposition, "attachment; filename*=UTF-8''" + utils::fileNameEncode(name));
+            }
+        }
+    }
+
+    // 控制字符和反斜杠经过 JSON 持久化及重建服务后，仍须按原始名称找到文件。
+    server::Service restored;
+    LocalHttpServer http(restored);
+    EXPECT_EQ(Access::data(restored).getAll().size(), urls.size());
+    for (const auto &url : urls)
+    {
+        SCOPED_TRACE(url);
+        const auto downloaded = http.get(url);
+        ASSERT_EQ(downloaded.m_code, HTTP_OK);
+        EXPECT_EQ(downloaded.m_body, content);
+    }
+}
+
+TEST_F(ServiceHttpTests, InvalidFileNamesPreserveExistingFilesAndMetadata)
+{
+    server::Service service;
+    LocalHttpServer http(service);
+    const auto outsidePath = m_directory / "outside.txt";
+    utils::FileUtil(outsidePath).setContent("outside");
+    for (const std::string type : {"uncompressed", "compressed"})
+    {
+        SCOPED_TRACE(type);
+        const auto name = type + ".txt";
+        ASSERT_EQ(http.post("/upload", {{"FileName", base64_encode(name)}, {"StorageType", type}}, "original").m_code, 201);
+        const auto metadata = utils::FileUtil(m_metadataFile).getContent();
+        const auto count = Access::data(service).getAll().size();
+        for (const auto &invalidName : std::vector<std::string>{"./" + name, "../outside.txt", outsidePath.string(), name + std::string("\0suffix", 7)})
+        {
+            SCOPED_TRACE(base64_encode(invalidName));
+            EXPECT_EQ(http.post("/upload", {{"FileName", base64_encode(invalidName)}, {"StorageType", type}}, "replacement").m_code, HTTP_BADREQUEST);
+            EXPECT_EQ(Access::data(service).getAll().size(), count);
+            EXPECT_EQ(utils::FileUtil(m_metadataFile).getContent(), metadata);
+            EXPECT_EQ(utils::FileUtil(outsidePath).getContent(), "outside");
+            const auto downloaded = http.get("/download/" + name);
+            EXPECT_EQ(downloaded.m_code, HTTP_OK);
+            EXPECT_EQ(downloaded.m_body, "original");
+        }
+    }
+}
+
+TEST_F(ServiceHttpTests, UploadsValidUtf8FileNamesAndNamesAtTheByteLimit)
+{
+    server::Service service;
+    LocalHttpServer http(service);
+    const std::string content = std::string(4096, 'A') + std::string("\0\xffz", 3);
+    for (const std::string type : {"uncompressed", "compressed"})
+    {
+        SCOPED_TRACE(type);
+        std::string chineseLimit;
+        for (int i = 0; i < 84; ++i) chineseLimit += u8"中";
+        chineseLimit += type.substr(0, 1) + ".x";
+        const std::vector<std::string> names{
+            "." + type, type + " . +%2F?#&\"'<>:|*.txt", u8"中文 😀 " + type + ".txt",
+            std::string(254, 'a') + type.substr(0, 1), chineseLimit,
+            type + "\xc2\xa0\xdf\xbf\xe0\xa0\x80\xed\x9f\xbf\xee\x80\x80\xef\xbf\xbf\xf0\x90\x80\x80\xf4\x8f\xbf\xbf.bin"};
+        for (const auto &name : names)
+        {
+            SCOPED_TRACE(base64_encode(name));
+            const auto uploaded = http.post("/upload", {{"FileName", base64_encode(name)}, {"StorageType", type}}, content);
+            ASSERT_EQ(uploaded.m_code, 201);
+            const auto url = utils::JsonUtil::UnSerialize(uploaded.m_body)["url"].asString();
+            EXPECT_EQ(url, utils::urlEncode("/download/" + name));
+            const auto downloaded = http.get(url);
+            ASSERT_EQ(downloaded.m_code, HTTP_OK);
+            EXPECT_EQ(downloaded.m_body, content);
+            EXPECT_EQ(downloaded.m_contentDisposition, "attachment; filename*=UTF-8''" + utils::fileNameEncode(name));
+        }
+    }
 }
 
 // 分别验证两个字段都缺失、只缺 StorageType、只缺 FileName；应在构造字符串和写文件前返回 400。
