@@ -362,7 +362,7 @@ TEST_F(ServiceHttpTests, ReturnsAnHtmlPageForEmptyMetadata)
     const auto response = http.get("/");
     EXPECT_EQ(response.m_code, HTTP_OK);
     EXPECT_EQ(response.m_contentType, "text/html;charset=utf-8");
-    EXPECT_EQ(response.m_body, "<!DOCTYPE html>\n<html><body><div class='file-list'><h3>已上传文件</h3></div><script>const backend = 'http://127.0.0.2:18081';</script></body></html>\n");
+    EXPECT_EQ(response.m_body, "<!DOCTYPE html>\n<html><body><div class='file-list'><h3>已上传文件</h3></div></body></html>\n");
 }
 
 TEST_F(ServiceHttpTests, IncludesEveryStoredFileWithoutDependingOnMapOrder)
@@ -380,17 +380,15 @@ TEST_F(ServiceHttpTests, IncludesEveryStoredFileWithoutDependingOnMapOrder)
     EXPECT_NE(response.m_body.find("<span class='file-type'>压缩存储</span>"), std::string::npos);
     EXPECT_NE(response.m_body.find("2000-01-01 00:00:00"), std::string::npos);
     EXPECT_EQ(response.m_body.find("{{FILE_LIST}}"), std::string::npos);
-    EXPECT_EQ(response.m_body.find("{{BACKEND_URL}}"), std::string::npos);
 }
 
-TEST_F(ServiceHttpTests, ReplacesEveryOccurrenceOfBothTemplatePlaceholders)
+TEST_F(ServiceHttpTests, ReplacesEveryOccurrenceOfTheFileListPlaceholder)
 {
-    writeTemplate("{{FILE_LIST}}|{{BACKEND_URL}}|{{FILE_LIST}}|{{BACKEND_URL}}");
+    writeTemplate("{{FILE_LIST}}|{{FILE_LIST}}");
     server::Service service;
     LocalHttpServer http(service);
     const auto body = http.get("/").m_body;
     EXPECT_EQ(Count(body, "<h3>已上传文件</h3>"), 2U);
-    EXPECT_EQ(Count(body, "http://127.0.0.2:18081"), 2U);
     EXPECT_EQ(body.find("{{"), std::string::npos);
 }
 
@@ -487,6 +485,49 @@ TEST_F(ServiceHttpTests, RendersTheRealApplicationTemplate)
     EXPECT_NE(response.m_body.find("/download/%E4%B8%AD%E6%96%87%20%26.txt"), std::string::npos);
     EXPECT_EQ(response.m_body.find("{{FILE_LIST}}"), std::string::npos);
     EXPECT_EQ(response.m_body.find("{{BACKEND_URL}}"), std::string::npos);
+    EXPECT_EQ(response.m_body.find("backendUrl"), std::string::npos);
+    EXPECT_NE(response.m_body.find("fetch('/upload',"), std::string::npos);
+}
+
+TEST_F(ServiceHttpTests, UploadsAndDownloadsWithDifferentHostHeaders)
+{
+    writeTemplate(m_originalTemplate);
+    server::Service service;
+    LocalHttpServer http(service);
+    // HTTP 连接仍发往本地测试端口；Host 模拟 IP、域名和代理对外提供的地址。
+    const std::vector<std::pair<std::string, std::string>> origins{
+        {"127.0.0.1:8081", "http://127.0.0.1:8081"},
+        {"localhost:8081", "http://localhost:8081"},
+        {"cloud.example:8081", "http://cloud.example:8081"},
+        {"cloud.example", "https://cloud.example"}};
+    const std::string content = std::string(4096, 'A') + std::string("\0\xffz", 3);
+    for (const auto &origin : origins)
+    {
+        SCOPED_TRACE(origin.second);
+        const std::vector<std::pair<std::string, std::string>> headers{{"Host", origin.first}, {"Origin", origin.second}};
+        const auto page = http.get("/", headers);
+        ASSERT_EQ(page.m_code, HTTP_OK);
+        EXPECT_NE(page.m_body.find("fetch('/upload',"), std::string::npos);
+        EXPECT_EQ(page.m_body.find("http://127.0.0.2:18081"), std::string::npos);
+        for (const std::string type : {"uncompressed", "compressed"})
+        {
+            SCOPED_TRACE(type);
+            const auto name = std::to_string(Access::data(service).getAll().size()) + u8"-中文 +.bin";
+            auto uploadHeaders = headers;
+            uploadHeaders.emplace_back("FileName", base64_encode(name));
+            uploadHeaders.emplace_back("StorageType", type);
+            const auto uploaded = http.post("/upload", uploadHeaders, content);
+            ASSERT_EQ(uploaded.m_code, 201);
+            const auto url = utils::JsonUtil::UnSerialize(uploaded.m_body)["url"].asString();
+            EXPECT_EQ(url.find("/download/"), 0U);
+            const auto pageWithFile = http.get("/", headers);
+            ASSERT_EQ(pageWithFile.m_code, HTTP_OK);
+            EXPECT_NE(pageWithFile.m_body.find(url), std::string::npos);
+            const auto downloaded = http.get(url, headers);
+            ASSERT_EQ(downloaded.m_code, HTTP_OK);
+            EXPECT_EQ(downloaded.m_body, content);
+        }
+    }
 }
 
 TEST_F(ServiceHttpTests, Returns500ForMissingTemplateAndRecovers)
@@ -545,16 +586,6 @@ TEST_F(ServiceHttpTests, PreservesDollarSequencesInFilenames)
     const auto body = http.get("/").m_body;
     EXPECT_NE(body.find("📄price$&amp;$1$$$`$&#39;.txt"), std::string::npos);
     EXPECT_NE(body.find("/download/price%24%26%241%24%24%24%60%24%27.txt"), std::string::npos);
-}
-
-TEST_F(ServiceHttpTests, DoesNotExpandBackendPlaceholdersInsideFilenames)
-{
-    writeMetadata({makeInfo("{{BACKEND_URL}}.txt")});
-    server::Service service;
-    LocalHttpServer http(service);
-    const auto body = http.get("/").m_body;
-    EXPECT_NE(body.find("📄{{BACKEND_URL}}.txt"), std::string::npos);
-    EXPECT_EQ(body.find("📄http://"), std::string::npos);
 }
 
 TEST_F(ServiceHttpTests, DoesNotRecursivelyExpandFileListPlaceholdersInsideFilenames)

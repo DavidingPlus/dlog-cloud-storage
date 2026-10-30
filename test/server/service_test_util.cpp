@@ -88,7 +88,7 @@ namespace service_test
         m_config["uncompressed_files_dir"] = (m_directory / "uncompressed").string();
         m_config["metadata_file"] = m_metadataFile.string();
         applyConfig();
-        writeTemplate("<!DOCTYPE html>\n<html><body>{{FILE_LIST}}<script>const backend = '{{BACKEND_URL}}';</script></body></html>\n");
+        writeTemplate("<!DOCTYPE html>\n<html><body>{{FILE_LIST}}</body></html>\n");
     }
 
     void ServiceFixture::TearDown()
@@ -224,7 +224,11 @@ namespace service_test
         evhttp_add_header(evhttp_request_get_output_headers(request.get()), "Host", "127.0.0.1");
         evhttp_add_header(evhttp_request_get_output_headers(request.get()), "Connection", "close");
         for (const auto &header : headers)
+        {
+            // 显式请求头覆盖默认值，便于测试不同 Host 和代理访问。
+            evhttp_remove_header(evhttp_request_get_output_headers(request.get()), header.first.data());
             evhttp_add_header(evhttp_request_get_output_headers(request.get()), header.first.data(), header.second.data());
+        }
         evbuffer_add(evhttp_request_get_output_buffer(request.get()), body.data(), body.size());
         // make_request() 接管 request；成功与失败都不再由调用方释放。
         if (0 != evhttp_make_request(connection.get(), request.release(), method, uri.data()))

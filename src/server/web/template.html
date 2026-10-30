@@ -166,11 +166,6 @@
     </div>
 
     <script>
-        // 动态配置注入
-        const config = {
-            backendUrl: '{{BACKEND_URL}}'
-        };
-
         async function uploadFile() {
             const fileInput = document.getElementById('fileInput');
             const storageType = document.querySelector('input[name="storageType"]:checked').value;
@@ -181,16 +176,17 @@
                 return;
             }
 
-            // // Base64 编码
+            // Base64 编码。
             const encodedFilename = btoa(unescape(encodeURIComponent(file.name)));
             console.log("Base64 编码结果:", encodedFilename);
 
             try {
-                const response = await fetch(`${config.backendUrl}/upload`, {
+                // /upload 是相对 URL，具体是以网站根路径为基准的相对地址。浏览器会自动补上当前页面的协议、主机和端口，兼容 IP、域名及反向代理访问。
+                const response = await fetch('/upload', {
                     method: 'POST',
                     headers: {
                         'StorageType': storageType,
-                        'FileName': encodedFilename // 使用 Base64 编码
+                        'FileName': encodedFilename
                     },
                     body: file
                 });
@@ -204,10 +200,6 @@
                 console.error('上传错误:', error);
                 alert('网络连接失败');
             }
-        }
-
-        function downloadFile(fileId) {
-            window.location = `${config.backendUrl}/download?id=${fileId}`;
         }
     </script>
 </body>

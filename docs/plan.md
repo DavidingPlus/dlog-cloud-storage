@@ -202,7 +202,7 @@ enum class StorageType
 
 本节骨架先沿用参考实现的 `ShowFileList()` 页面生成职责；上方协议和第 6 节中的独立 `/files` 接口作为原计划保留，后续确定是否拆分时再统一调整。
 
-`Service` 通过对象成员 `DataManager m_dataManager` 拥有元数据管理器，其生命周期随服务对象管理，构造时加载持久化文件。`ShowFileList()` 通过回调参数 `arg` 取回当前 `Service`，调用 `m_dataManager.getAll()`，读取可执行文件旁的 `web/template.html`，用 `std::regex_replace()` 替换 `{{FILE_LIST}}` 和 `{{BACKEND_URL}}`，最后写入请求的输出缓冲区，以 `text/html;charset=utf-8` 返回 HTTP 200。后端地址由配置中的 IP 和端口拼接。
+`Service` 通过对象成员 `DataManager m_dataManager` 拥有元数据管理器，其生命周期随服务对象管理，构造时加载持久化文件。`ShowFileList()` 通过回调参数 `arg` 取回当前 `Service`，调用 `m_dataManager.getAll()`，读取可执行文件旁的 `web/template.html`，用 `std::regex_replace()` 替换 `{{FILE_LIST}}`，最后写入请求的输出缓冲区，以 `text/html;charset=utf-8` 返回 HTTP 200。页面通过 `fetch('/upload', ...)` 同源上传，不再注入配置中的监听 IP 和端口；反向代理需将上传及下载路径转发到同一个服务。
 
 `GenericCallback()` 当前按参考流程提取 URI 路径并进行 URL 解码，再依次判断：路径以配置下载前缀开头时调用 `Download()`，路径等于 `/upload` 时调用 `Upload()`，路径等于 `/` 时调用 `ShowFileList()`，其余返回 404。通用回调声明为 `noexcept`，URI 或路径指针缺失时返回 400；仅将路径解码的 `std::invalid_argument` 转为 400，其他未处理的业务异常由最外层 `catch (...)` 转为 500，避免异常逸出事件循环。真实 HTTP 测试验证非法百分号编码、模板缺失、目录占位及读取失败的响应，并在失败后继续请求和恢复资源。`Upload()` 已校验 POST，`Download()` 已校验 GET；其他方法和独立 `/files` 接口后续再补充。下载从请求的原始编码路径重新取值并解码，不对 GenericCallback 的解码结果再次解码；下载路由使用 `find(prefix) == 0` 从路径起始位置匹配，默认及自定义前缀下的未知路径均有回归测试。
 
