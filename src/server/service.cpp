@@ -178,7 +178,7 @@ void Service::Upload(evhttp_request *req, void *arg)
     }
 
     Service *service = static_cast<Service *>(arg);
-    std::filesystem::path path;
+    std::filesystem::path filePath;
     bool fileWriteStarted = false;
 
     try
@@ -248,7 +248,7 @@ void Service::Upload(evhttp_request *req, void *arg)
                 break;
         }
 
-        path = directory / fileName;
+        filePath = directory / fileName;
 
         // 5. 先查内存中是否已经有对应 URL 的元数据，再查磁盘上是否已有文件；任意一处占用都返回 409。
         // 两种策略共用下载前缀和文件名，因此跨策略的同名文件也会冲突。
@@ -267,7 +267,7 @@ void Service::Upload(evhttp_request *req, void *arg)
         }
 
         // symlink_status() 检查路径自身，连指向不存在目标的符号链接也视为已占用。
-        if (std::filesystem::exists(std::filesystem::symlink_status(path)))
+        if (std::filesystem::exists(std::filesystem::symlink_status(filePath)))
         {
             evhttp_send_reply(req, 409, "File already exists", nullptr);
             return;
@@ -301,13 +301,13 @@ void Service::Upload(evhttp_request *req, void *arg)
         // 写入前设置标记，保证写到一半失败时也能清理残留文件。
         fileWriteStarted = true;
 
-        utils::FileUtil(path).setContent(content);
+        utils::FileUtil(filePath).setContent(content);
 
         // 8. 从实际磁盘文件生成元数据，记录存储路径、修改时间和实际存储大小，然后添加到内存表中。
         // 这里有两份用途不同的 JSON：body 是给客户端的响应，m_dataManager 持久化的 JSON 是服务端的文件元数据。
 
         // 从磁盘文件生成元数据。
-        auto info = FileMetadata::FromFile(path);
+        auto info = FileMetadata::FromFile(filePath);
 
         // 先准备成功响应的 JSON，避免序列化失败时已经提交元数据；对外下载 URL 进行百分号编码。
         Json::Value result;
@@ -331,7 +331,7 @@ void Service::Upload(evhttp_request *req, void *arg)
         if (fileWriteStarted)
         {
             std::error_code error;
-            std::filesystem::remove(path, error);
+            std::filesystem::remove(filePath, error);
         }
 
         evhttp_send_reply(req, HTTP_INTERNAL, "Upload failed", nullptr);
@@ -530,13 +530,13 @@ std::string Service::GenerateFileListHtml(const std::vector<FileMetadata> &files
     auto compressedDir = Config::GetInstance().getCompressedFilesDirPath();
     for (auto &file : files)
     {
-        auto path = file.m_absoluteFilePath.lexically_normal();
+        auto filePath = file.m_absoluteFilePath.lexically_normal();
         // 按配置的实际目录判断存储类型，避免根据文件名中的 compressed 等字样误判。
-        bool isCompressed = path == (compressedDir / path.filename()).lexically_normal();
+        bool isCompressed = filePath == (compressedDir / filePath.filename()).lexically_normal();
 
         stream << "<div class='file-item'>"
                << "<div class='file-info'>"
-               << "<span>📄" << utils::escapeHtmlText(path.filename().string()) << "</span>"
+               << "<span>📄" << utils::escapeHtmlText(filePath.filename().string()) << "</span>"
                << "<span class='file-type'>" << (isCompressed ? "压缩存储" : "未压缩存储") << "</span>"
                << "<span>存储大小：" << FormatFileSize(file.m_fileSize) << "</span>"
                << "<span>" << FormatFileTime(file.m_mtime) << "</span>"
