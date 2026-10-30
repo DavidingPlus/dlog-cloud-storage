@@ -89,7 +89,7 @@ void Service::run()
     // evhttp_set_gencb() 注册通用请求回调（generic callback），由 libevent 收到请求后调用 GenericCallback；this 作为上下文传给 arg 参数。
     evhttp_set_gencb(http.get(), GenericCallback, this);
 
-    // TODO: 后续处理 SIGINT/SIGTERM 停止信号，并补齐在途上传、下载请求的收尾。
+    // TODO 处理 SIGINT/SIGTERM，停止接收新请求并退出事件循环，由应用完成资源释放和日志刷新。
 
     // 阻塞等待事件并执行回调；返回 -1 时抛出异常，0/1 分别表示正常退出或没有待处理事件。
     if (-1 == event_base_dispatch(base.get())) throw std::runtime_error("Service::run(): event_base_dispatch() failed");
@@ -219,7 +219,7 @@ void Service::Upload(evhttp_request *req, void *arg)
         }
 
         // 3. 解码 UTF-8 文件名字节，例如 YS50eHQ= → a.txt；解码或文件名校验失败时返回 400。
-        // TODO 当前 cpp-base64 的解码规则较宽松：例如 "Zg" 缺少填充、"Zg=!" 含非法字符，也都能解码为 "f"。因此，解码成功只说明库能还原出字节，不代表输入符合标准 Base64 格式。若协议要求标准格式，严格校验可拒绝这类非规范输入，让客户端明确收到编码错误，而不是被宽松接受。这是编解码层的格式约束，适合统一实现并复用；Upload 负责调用解码及处理结果。后续在编解码工具层统一提供严格 Base64 校验。
+        // 沿用 cpp-base64 的解码规则，允许库能接受的非标准写法；解码后的文件名仍须通过下方校验。
         std::string fileName;
         try
         {
@@ -255,7 +255,6 @@ void Service::Upload(evhttp_request *req, void *arg)
 
         // 5. 先查内存中是否已经有对应 URL 的元数据，再查磁盘上是否已有文件；任意一处占用都返回 409。
         // 两种策略共用下载前缀和文件名，因此跨策略的同名文件也会冲突。
-        // TODO 引入并发上传时补齐文件排他创建，避免检查后被其他写入占用。
         try
         {
             // getFileMetaDataByRequestPath() 函数未找到抛出异常，在 catch 分支被捕获然后正常执行后续，这正是我们想要的。如果找到，走 try 的后续分支返回 409。
@@ -381,7 +380,6 @@ void Service::Download(evhttp_request *req, void *arg)
     // 下载过程只读取数据文件，不创建解压临时文件，也不修改内存元数据表或磁盘元数据 JSON。
 
     // 1. 其他方法返回 405，Allow 头说明当前接受 GET。
-    // TODO 后续补齐 HEAD 等方法的响应语义。
     if (EVHTTP_REQ_GET != evhttp_request_get_command(req))
     {
         evhttp_add_header(evhttp_request_get_output_headers(req), "Allow", "GET");
@@ -437,13 +435,12 @@ void Service::Download(evhttp_request *req, void *arg)
         }
 
         // 5. 先读取磁盘上实际保存的字节，若是压缩存储，在内存中解压为原始内容。
-        // TODO 后续在工具层补齐压缩数据损坏检测，并增加读取/解压后的大小限制。
-        // TODO 大文件发送优化：未压缩文件可使用 evbuffer_add_file() 直接发送，避免完整读入 content，并正确管理文件描述符的所有权和发送生命周期；压缩文件评估流式解压及分块发送，降低内存占用。
+        // TODO 在完整读取磁盘内容前检查存储大小上限。
+        // TODO 识别明显截断和解压失败，保留合法空文件语义；优先级低于应用运行闭环。
         auto content = file.getContent();
         if (StorageType::Compressed == storageType) content = utils::FileUtil::UnCompress(content);
 
         // 6. 设置二进制响应类型、下载文件名及 ETag。
-        // TODO 后续补齐外部文件变化时的元数据同步、缓存条件请求，以及 Range/If-Range 断点下载。
         auto etag = GetETag(info);
         // Content-Disposition 用于明确浏览器的下载行为和保存文件名，下载主流程本身不依赖此响应头。attachment 建议按附件下载；filename* 指定建议文件名，避免浏览器仅根据请求路径推断名称。UTF-8'' 声明文件名使用 UTF-8，语言标记留空；百分号编码支持中文、空格等字符。例如文件名 "a b.txt" 会生成 "attachment; filename*=UTF-8''a%20b.txt"。
         auto disposition = "attachment; filename*=UTF-8''" + utils::fileNameEncode(filePath.filename().string());
@@ -457,14 +454,14 @@ void Service::Download(evhttp_request *req, void *arg)
         evhttp_add_header(headers, "Content-Type", "application/octet-stream");
 
         // 7. 按长度发送二进制正文，保留 '\0'；libevent 会根据实际正文生成 Content-Length 响应字段。
-        // TODO 当前统一返回完整正文和 200；Range 尚未实现，暂不声明 Accept-Ranges: bytes。
+        // 当前统一返回完整正文和 200；未实现 Range，不声明 Accept-Ranges: bytes。
         auto outputBuf = evhttp_request_get_output_buffer(req);
         evbuffer_add(outputBuf, content.data(), content.size());
         evhttp_send_reply(req, HTTP_OK, "OK", nullptr);
     }
     catch (const std::exception &)
     {
-        // TODO 接入日志后记录读取或解压异常，并补充并发删除、替换文件等场景的处理。
+        // TODO 接入日志后记录读取或解压异常。
         evhttp_send_reply(req, HTTP_INTERNAL, "Download failed", nullptr);
     }
 }

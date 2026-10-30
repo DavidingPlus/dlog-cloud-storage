@@ -1278,7 +1278,7 @@ TEST_F(ServiceHttpTests, DownloadsCompleteFilesWhileRangeAndCacheConditionsAreDe
     EXPECT_EQ(range.m_body, "0123456789");
     EXPECT_EQ(range.m_contentLength, "10");
     EXPECT_TRUE(range.m_acceptRanges.empty());
-    // TODO: 接入缓存验证后，匹配 If-None-Match 的响应应改为 304，并更新此用例。
+    // 当前不处理缓存条件请求；即使 If-None-Match 匹配，也返回 200 和完整正文。
     const auto cached = http.get("/download/a.txt", {{"If-None-Match", first.m_etag}});
     EXPECT_EQ(cached.m_code, HTTP_OK);
     EXPECT_EQ(cached.m_body, "0123456789");

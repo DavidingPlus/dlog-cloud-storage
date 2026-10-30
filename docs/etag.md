@@ -72,7 +72,7 @@ If-Range: "v1"
 
 ## 本项目中的职责与生成规则
 
-`Service::GetETag(const FileMetadata &info)` 已实现标签生成，返回带双引号的 `"文件名-文件大小-修改时间"`。`Download()` 已将标签写入响应头，并返回完整原始文件内容；If-None-Match 等缓存条件和 Range/If-Range 判断留 TODO。
+`Service::GetETag(const FileMetadata &info)` 已实现标签生成，返回带双引号的 `"文件名-文件大小-修改时间"`。`Download()` 已将标签写入响应头，并返回完整原始文件内容；If-None-Match 等缓存条件和 Range/If-Range 判断属于可选增强，第一版不要求实现。
 
 本项目确定沿用参考实现，以“文件名-文件大小-修改时间”生成自定义 ETag。在文件由本服务管理、内容更新会反映到文件大小或修改时间的约束下，按强 ETag 使用。生成时使用以下元数据：[参考 GetETag 实现](https://github.com/youngyangyang04/Kama-AsynLogSystem-CloudStorage/blob/main/src/server/Service.hpp)
 
@@ -90,4 +90,4 @@ If-Range: "v1"
 - 本方案依赖受控的文件更新流程：内容改变时，文件大小或修改时间必须随之变化，并同步刷新元数据。直接修改内容后保留原有大小和修改时间，会破坏强校验约定。
 - 本项目下载返回原始内容，压缩文件的 `m_fileSize` 则记录存储大小；更新存储文件后，需要同步刷新参与标签生成的元数据。
 
-第一版仍按[项目计划的断点下载说明](plan.md#断点下载)返回完整文件；缓存条件处理和范围请求需要后续接入，增加 `GetETag()` 本身不会自动实现这些行为。
+第一版仍按[项目计划的断点下载说明](plan.md#断点下载)返回完整文件，不支持外部进程修改数据文件或元数据。只有选择实现缓存或断点下载时，才增加相应请求处理；`GetETag()` 本身仅生成版本标识。
