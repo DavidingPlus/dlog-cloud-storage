@@ -1273,6 +1273,7 @@ TEST_F(ServiceHttpTests, DownloadsCompleteFilesWhileRangeAndCacheConditionsAreDe
     ASSERT_FALSE(first.m_etag.empty());
 
     // Range 尚未实现时仍返回完整 200，不能像参考实现一样仅凭 If-Range 返回假的 206。
+    // TODO 实现断点续传后调整此用例，补充 Range / If-Range 的区间正文、206 和 Content-Range 验证。
     const auto range = http.get("/download/a.txt", {{"Range", "bytes=2-4"}, {"If-Range", first.m_etag}});
     EXPECT_EQ(range.m_code, HTTP_OK);
     EXPECT_EQ(range.m_body, "0123456789");

@@ -48,7 +48,7 @@ private:
     // 查询元数据并返回包含文件列表的 HTML 页面。
     static void ShowFileList(evhttp_request *req, void *arg);
 
-    // 下载处理：仅接受 GET，按请求路径查询元数据，读取或在内存中解压后返回完整原始字节、下载文件名和 ETag，成功返回 200。支持零字节文件；记录或文件不存在返回 404，存储目录无法识别或读取/解压异常返回 500。当前不处理 Range 或缓存条件请求。
+    // 下载处理：仅接受 GET，按请求路径查询元数据，读取或在内存中解压后返回完整原始字节、下载文件名和 ETag，成功返回 200。支持零字节文件；记录或文件不存在返回 404，存储目录无法识别或读取/解压异常返回 500。Range / If-Range 断点续传已列 TODO，当前不处理区间或缓存条件请求。
     static void Download(evhttp_request *req, void *arg);
 
     // 按服务端本地时区格式化为 YYYY-MM-DD HH:MM:SS，时钟转换在函数内部完成。

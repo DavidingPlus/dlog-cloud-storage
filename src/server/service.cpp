@@ -454,7 +454,8 @@ void Service::Download(evhttp_request *req, void *arg)
         evhttp_add_header(headers, "Content-Type", "application/octet-stream");
 
         // 7. 按长度发送二进制正文，保留 '\0'；libevent 会根据实际正文生成 Content-Length 响应字段。
-        // 当前统一返回完整正文和 200；未实现 Range，不声明 Accept-Ranges: bytes。
+        // TODO 实现 Range / If-Range 断点续传，按实际字节区间返回 206 和 Content-Range，支持后再声明 Accept-Ranges: bytes。
+        // 当前仍统一返回完整正文和 200，不声明区间下载能力。
         auto outputBuf = evhttp_request_get_output_buffer(req);
         evbuffer_add(outputBuf, content.data(), content.size());
         evhttp_send_reply(req, HTTP_OK, "OK", nullptr);
