@@ -21,7 +21,13 @@ xmake f -m debug --with_gtest=yes -y
 xmake test
 ```
 
-页面上传脚本另有独立的 Node.js 测试，不依赖第三方包：
+Linux 下，`xmake test` 也会执行页面上传脚本测试，需要安装 Node.js，无需第三方包。可以单独运行该测试项：
+
+```bash
+rtk xmake test -y tests-server-web/upload
+```
+
+也可直接执行脚本：
 
 ```bash
 rtk node test/server/web/upload_test.js

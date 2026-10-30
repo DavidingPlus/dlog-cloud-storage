@@ -80,3 +80,22 @@ target("tests")
         add_tests(group, options)
     end
 target_end()
+
+
+-- 页面脚本使用 Node.js 内置测试模块，作为独立测试项随 xmake test 一起执行。
+if is_plat("linux") then
+    target("tests-server-web")
+        set_default(false)
+        set_kind("phony")
+        on_install(function () end)
+
+        add_tests("upload")
+        on_test(function ()
+            import("lib.detect.find_tool")
+            local node = find_tool("node")
+            assert(node, "Node.js is required to run tests-server-web/upload")
+            os.vrunv(node.program, {path.join(os.projectdir(), "test/server/web/upload_test.js")})
+            return true
+        end)
+    target_end()
+end

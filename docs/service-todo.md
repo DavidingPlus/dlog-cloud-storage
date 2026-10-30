@@ -107,6 +107,8 @@ Service 通过目录区分存储类型，维护者保证两种目录不同。此
 
 - `UploadsAndDownloadsWithDifferentHostHeaders` 使用真实本地 HTTP，覆盖 IP、localhost、域名及 HTTPS 代理对外地址对应的 Host/Origin；验证两种策略上传、列表展示和二进制内容下载。测试连接本身是本地 HTTP，没有建立实际 HTTPS 代理。
 - `test/server/web/upload_test.js` 用 Node.js 直接执行真实模板中的上传脚本，模拟 DOM 和 fetch，覆盖四种页面地址与两种策略共 8 个用例。检查实际传给 fetch 的地址解析后与页面同源、路径为 `/upload`，同时验证中文文件名编码、存储策略、文件正文和成功后的刷新。该测试无需第三方依赖，不等同于真实浏览器的跨源与代理联调。
+- 页面脚本已注册为 Linux 下的 `tests-server-web/upload` 测试项，随完整 `rtk xmake test -y` 执行，也可用 `rtk xmake test -y tests-server-web/upload` 单独运行；需要 Node.js，脚本失败会使测试失败。
+- 接入后执行完整 `rtk xmake test -y`：391 项 C++ 测试和 8 项页面脚本测试全部通过。临时注入一个失败脚本用例时，XMake 按预期以非零状态退出；恢复正常环境后测试继续通过。
 - 2026-10-30 执行 `rtk xmake test -y tests/server` 和 `rtk node test/server/web/upload_test.js`：185 项服务端测试及 8 项页面脚本测试全部通过。用修复前的固定后端地址运行脚本测试时，8 项均按预期失败。
 
 **剩余验收：** 在实际浏览器中通过 localhost、IP 和反向代理访问，确认两种策略的上传、列表及下载可用，请求始终发往当前页面所属的源。
