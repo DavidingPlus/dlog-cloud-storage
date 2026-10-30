@@ -123,8 +123,11 @@ void Service::GenericCallback(evhttp_request *req, void *arg) noexcept
         // run() 注册回调时传入 this 指针。
         Service *service = static_cast<Service *>(arg);
 
-        // 下载请求。
-        if (std::string::npos != requestPath.find(service->m_downloadPrefix))
+        // 下载请求：下载前缀必须位于路径开头，避免把路径中间包含前缀的未知路由分发到下载处理。例如：
+        // GET /download/a.txt：进入下载处理。
+        // GET /other/download/a.txt：作为未知路由返回 404。
+        // POST /other/download/a.txt：作为未知路由返回 404。
+        if (0 == requestPath.find(service->m_downloadPrefix))
         {
             Download(req, arg);
         }
@@ -395,7 +398,6 @@ void Service::Download(evhttp_request *req, void *arg)
     {
         // 2. 从请求的原始编码路径解码得到 requestPath，查询参数不参与查找；加号仍表示加号。
         // GenericCallback 的解码结果是其局部变量，这里重新读取原始 URI，避免对已解码的结果再次解码。
-        // TODO 后续统一复用路由解析的路径，并完善路由前缀匹配。
         auto requestPath = utils::urlDecode(evhttp_uri_get_path(evhttp_request_get_evhttp_uri(req)));
 
         // 3. 元数据提供实际文件位置，不能直接把客户端请求路径当成磁盘路径。

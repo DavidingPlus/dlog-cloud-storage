@@ -1260,6 +1260,24 @@ TEST_F(ServiceRoutingTests, IgnoresQueryParametersWhenSelectingTheRootHandler)
     EXPECT_EQ(http.get("/?token=123&next=/download/a.txt").m_code, HTTP_OK);
 }
 
+TEST_F(ServiceRoutingTests, MatchesDownloadPrefixesOnlyAtTheStartOfThePath)
+{
+    for (const std::string prefix : {"/download/", "/files/"})
+    {
+        SCOPED_TRACE(prefix);
+        m_config["download_prefix"] = prefix;
+        applyConfig();
+        server::Service service;
+        LocalHttpServer http(service);
+
+        // 正确前缀仍进入下载处理；前缀仅出现在路径中间时，GET 和 POST 都应作为未知路由返回 404。
+        EXPECT_EQ(http.post(prefix + "missing.txt", {}, "data").m_code, HTTP_BADMETHOD);
+        const auto unknownPath = "/other" + prefix + "missing.txt";
+        EXPECT_EQ(http.get(unknownPath).m_code, HTTP_NOTFOUND);
+        EXPECT_EQ(http.post(unknownPath, {}, "data").m_code, HTTP_NOTFOUND);
+    }
+}
+
 TEST_F(ServiceRoutingTests, DecodesThePathBeforeRouting)
 {
     server::Service service;
